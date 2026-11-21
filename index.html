@@ -1,0 +1,2419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#22301f">
+<meta name="description" content="庭つむぎ — めぐる四季、百年の庭。ブラウザだけで動く、ゆっくり育つガーデニングゲーム。">
+<title>庭つむぎ — NIWA TSUMUGI</title>
+
+<!-- ▼ ネットから読むライブラリ（全て CDN / 無くても動くよう各機能は存在確認つき） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
+
+<style>
+/* ============ tokens ============ */
+:root{
+  --s1:#cfe3f2; --s2:#f6e7ee; --s3:#9dbb84; --s4:#5f8257;   /* 空と大地（JSが季節＋時刻で塗る） */
+  --sun:#fff3c4; --haze:rgba(255,255,255,.35);
+  --ink:#2b2419; --ink2:#5d5347;
+  --paper:rgba(255,252,244,.93); --paper2:rgba(255,252,244,.72);
+  --line:rgba(70,55,35,.18); --sh:rgba(25,35,20,.22);
+  --leaf:#4d7c53; --leaf-d:#345a3a; --gold:#d9a93c; --terra:#c96a44; --sky:#6f9fd0; --dew:#57a6c4;
+  --wood:#8a6540; --wood-d:#5f4429; --soil:#4a3524; --soil-d:#2c1e14;
+  --r:16px;
+  --fs:1;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;overscroll-behavior-y:none}
+body{background:#101710;color:var(--ink);-webkit-user-select:none;user-select:none;
+  font-family:"Zen Kaku Gothic New",-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+  font-size:calc(14px * var(--fs))}
+h1,h2,.serif{font-family:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",Georgia,serif;font-weight:600}
+button{font-family:inherit;font-size:inherit;color:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:rgba(60,50,35,.28);border-radius:3px}
+
+/* ============ frame ============ */
+#app{position:relative;max-width:470px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;overflow:hidden;
+  background:linear-gradient(180deg,var(--s1) 0%,var(--s2) 26%,var(--s3) 44%,var(--s4) 100%);transition:background 2s linear}
+body.desk #app{box-shadow:0 0 0 1px rgba(255,255,255,.18),0 22px 60px rgba(0,0,0,.55)}
+#scene{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:12}
+#stars{position:absolute;inset:0 0 45% 0;pointer-events:none;z-index:2;opacity:0;transition:opacity 2.5s}
+
+/* ============ header ============ */
+header{position:relative;z-index:20;padding:calc(env(safe-area-inset-top) + 7px) 11px 6px;
+  background:linear-gradient(180deg,rgba(255,255,255,.8),rgba(255,255,255,.4));border-bottom:1px solid var(--line);
+  backdrop-filter:blur(6px)}
+.hrow{display:flex;align-items:center;gap:8px}
+.logo{font-size:calc(18px * var(--fs));letter-spacing:.15em;line-height:1.05}
+.logo small{display:block;font-size:calc(8px * var(--fs));letter-spacing:.26em;opacity:.5;font-weight:400;font-family:inherit}
+.spacer{flex:1}
+#clock{text-align:right;line-height:1.3;font-size:calc(12px * var(--fs))}
+#clock b{font-family:"Shippori Mincho B1",serif}
+#clock .sub{opacity:.66;font-size:calc(10px * var(--fs))}
+.iconbtn{border:1px solid var(--line);background:var(--paper2);border-radius:999px;width:33px;height:33px;font-size:15px;
+  display:grid;place-items:center;padding:0}
+.iconbtn:active{transform:scale(.94)}
+#centBar{height:3px;background:rgba(255,255,255,.45);border-radius:2px;margin-top:5px;overflow:hidden}
+#centBar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8ec98f,#f3d264,#e89ab4);transition:width .8s}
+
+/* ============ stage ============ */
+#stage{flex:1;position:relative;overflow:hidden;z-index:5;display:flex;flex-direction:column}
+#yardWrap{flex:1;overflow:auto;padding:8px 9px;position:relative}
+#yardWrap::after{content:"";display:block;height:calc(env(safe-area-inset-bottom) + 160px)}
+.chiprow{display:flex;gap:6px;flex-wrap:wrap;font-size:calc(10.5px * var(--fs));margin:0 2px 7px}
+.chip{border-radius:999px;padding:3px 9px;background:var(--paper2);border:1px solid var(--line);white-space:nowrap;
+  font-size:calc(10.5px * var(--fs))}
+.chip b{font-family:"Shippori Mincho B1",serif;font-size:calc(12px * var(--fs))}
+.chip.hot{background:#ffe9a8;border-color:#d9a93c;font-weight:700}
+.chip.cold{background:#dff0fb;border-color:#8bb8d6}
+
+/* ---- 予報 ---- */
+#wx{display:flex;align-items:center;gap:9px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);
+  padding:8px 10px;margin-bottom:8px;box-shadow:0 3px 10px var(--sh)}
+#wx .big{font-size:26px;line-height:1}
+#wx .txt{flex:1;min-width:0}
+#wx .t1{font-size:calc(12.5px * var(--fs));font-weight:700}
+#wx .t2{font-size:calc(10.5px * var(--fs));opacity:.72;line-height:1.45}
+#wx .nx{text-align:right;font-size:calc(9.6px * var(--fs));opacity:.82;line-height:1.45;flex:0 0 32%;max-width:33%;overflow-wrap:anywhere}
+#wx .nx b{font-size:17px}
+
+/* ---- 今日の庭 ---- */
+#today{background:linear-gradient(135deg,rgba(255,247,222,.96),rgba(255,255,255,.9));border:1px solid rgba(200,155,60,.4);
+  border-radius:var(--r);padding:10px 11px;margin-bottom:8px;box-shadow:0 4px 14px var(--sh)}
+#today h3{margin:0 0 5px;font-size:calc(13.5px * var(--fs));letter-spacing:.06em}
+#today ul{margin:0;padding-left:1.1em;font-size:calc(11.6px * var(--fs));line-height:1.75}
+#today .go{margin-top:8px}
+
+/* ============ 庭（描画まわり） ============ */
+#yard{position:relative;border-radius:20px;overflow:hidden;
+  box-shadow:0 10px 26px var(--sh),inset 0 0 0 1px rgba(255,255,255,.22);
+  background:linear-gradient(180deg,var(--s1) 0%,var(--s2) 26%,#b9c99a 30%,var(--s3) 42%,var(--s4) 100%);
+  transition:background 2s linear}
+#skyband{position:relative;height:118px;overflow:hidden}
+#sunmoon{position:absolute;width:52px;height:52px;margin:-26px 0 0 -26px;transition:left 1.6s linear,top 1.6s linear}
+#sunmoon .sun{position:absolute;inset:8px;border-radius:50%;background:radial-gradient(circle at 40% 38%,#fffdf0,var(--sun) 55%,#f8d97a);
+  box-shadow:0 0 26px 10px rgba(255,238,170,.55)}
+#sunmoon.moon .sun{background:radial-gradient(circle at 38% 34%,#fffffa,#e7edf6 60%,#c3cede);box-shadow:0 0 18px 6px rgba(215,230,255,.4)}
+#sunmoon.moon .sun::after{content:"";position:absolute;left:24px;top:12px;width:9px;height:9px;border-radius:50%;background:rgba(150,165,190,.35)}
+.cloud{position:absolute;opacity:.85;filter:blur(.4px)}
+.cloud path,.cloud ellipse{fill:rgba(255,255,255,.92)}
+#treeline{position:absolute;left:0;right:0;bottom:-2px;width:100%;height:76px;display:block}
+#hills{position:absolute;left:0;right:0;bottom:26px;width:100%;height:60px;display:block;opacity:.5}
+#veil{position:absolute;inset:0;pointer-events:none;z-index:14;background:linear-gradient(180deg,rgba(20,30,60,.55),rgba(15,22,40,.4));
+  opacity:0;transition:opacity 2s}
+#yardglow{position:absolute;inset:0;pointer-events:none;z-index:13;opacity:0;transition:opacity 2s;
+  background:radial-gradient(60% 40% at 50% 8%,rgba(255,214,140,.5),rgba(255,180,120,0) 70%)}
+#decor{position:absolute;left:0;right:0;top:0;height:118px;pointer-events:none;z-index:3;overflow:hidden}
+.deco{position:absolute;text-align:center;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.32))}
+.deco small{display:block;font-size:8px;letter-spacing:.02em;color:rgba(255,255,255,.95);text-shadow:0 1px 2px rgba(0,0,0,.75);margin-top:1px}
+.ripple{position:absolute;left:50%;top:55%;width:12px;height:6px;margin:-3px 0 0 -6px;border:1.5px solid rgba(255,255,255,.6);
+  border-radius:50%;animation:rip 3.4s ease-out infinite}
+.ripple:nth-child(2){animation-delay:1.7s}
+@keyframes rip{0%{transform:scale(.4);opacity:.9}100%{transform:scale(4);opacity:0}}
+
+#creatures{position:absolute;inset:0;pointer-events:none;z-index:16;overflow:hidden}
+.cre{position:absolute;font-size:22px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.35))}
+.cre .tag{position:absolute;left:50%;transform:translateX(-50%);top:-14px;font-size:9px;white-space:nowrap;
+  background:rgba(255,255,255,.85);border-radius:999px;padding:1px 6px;color:#3a332b}
+
+/* ---- 苗床 ---- */
+#beds{position:relative;z-index:2;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 9px 14px}
+.bed{position:relative;border-radius:12px;min-height:112px;padding:0;cursor:pointer;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  border:3px solid var(--wood);
+  background:
+    radial-gradient(120% 90% at 50% 120%,rgba(0,0,0,.34),rgba(0,0,0,0) 60%),
+    radial-gradient(circle at 20% 30%,rgba(255,255,255,.07) 0 2px,transparent 2px),
+    radial-gradient(circle at 70% 60%,rgba(0,0,0,.12) 0 2px,transparent 2px),
+    linear-gradient(180deg,var(--soil),var(--soil-d));
+  background-size:auto,26px 26px,19px 19px,auto;
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.16),inset 0 -9px 16px rgba(0,0,0,.4),0 4px 9px rgba(0,0,0,.28);
+  transition:transform .18s,box-shadow .3s}
+.bed::after{content:"";position:absolute;inset:0;background:#1a1008;opacity:calc(var(--w,.5) * .38);pointer-events:none;transition:opacity .6s}
+.bed:active{transform:translateY(1px) scale(.985)}
+.bed.wet{box-shadow:inset 0 3px 0 rgba(255,255,255,.16),inset 0 -9px 16px rgba(0,0,0,.45),0 0 0 2px rgba(120,190,220,.55)}
+.bed.bloomed{box-shadow:inset 0 3px 0 rgba(255,255,255,.16),inset 0 -9px 16px rgba(0,0,0,.4),0 0 14px rgba(255,232,160,.6)}
+.bed.ready{animation:readyPulse 1.9s ease-in-out infinite}
+@keyframes readyPulse{50%{box-shadow:inset 0 3px 0 rgba(255,255,255,.16),inset 0 -9px 16px rgba(0,0,0,.4),0 0 0 3px rgba(255,222,110,.85)}}
+.bed.flash{animation:flashBed 1s ease-in-out 3}
+@keyframes flashBed{50%{box-shadow:0 0 0 4px rgba(255,214,90,.95)}}
+.bed.lock{border-style:dashed;border-color:rgba(255,255,255,.4);
+  background:linear-gradient(180deg,rgba(0,0,0,.22),rgba(0,0,0,.34));color:#fff;align-items:center;justify-content:center;
+  font-size:calc(10.5px * var(--fs));text-align:center;gap:2px}
+.bed.lock span{font-size:19px}
+.bed.drop{outline:3px dashed rgba(255,238,170,.95);outline-offset:-6px;transform:scale(1.03)}
+.bed.empty .plus{position:absolute;inset:6px;border:2px dashed rgba(255,255,255,.34);border-radius:9px;display:grid;place-items:center;
+  color:rgba(255,255,255,.72);font-size:19px}
+.bed svg.plant{width:100%;height:84px;display:block;overflow:visible;position:relative;z-index:1}
+.bname{position:relative;z-index:1;font-size:calc(9.8px * var(--fs));background:rgba(255,252,244,.86);border-radius:999px;
+  padding:1px 7px;margin-bottom:5px;max-width:96%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bbar{position:absolute;left:6px;right:6px;top:5px;height:3px;background:rgba(0,0,0,.34);border-radius:2px;overflow:hidden;z-index:2}
+.bbar i{display:block;height:100%;background:linear-gradient(90deg,#a8d98a,#f4e07c)}
+.bw{position:absolute;left:6px;right:6px;top:9px;height:2px;background:rgba(0,0,0,.3);border-radius:2px;overflow:hidden;z-index:2}
+.bw i{display:block;height:100%;background:linear-gradient(90deg,#63b6d8,#a9dff0)}
+.bbadges{position:absolute;top:13px;right:5px;display:flex;flex-direction:column;gap:1px;font-size:11px;z-index:3;
+  text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.bsoil{position:absolute;bottom:4px;left:6px;font-size:9px;opacity:.85;z-index:3;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.sway{transform-origin:50% 100%;animation:sw 5.2s ease-in-out infinite}
+@keyframes sw{50%{transform:rotate(2.1deg)}}
+.droop{transform-origin:50% 100%;transform:rotate(7deg) translateY(2px) scaleY(.94)}
+
+/* ---- 種ストリップ ---- */
+#pouch{position:sticky;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:13;display:flex;align-items:center;gap:8px;
+  margin:9px 2px 0;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:6px 8px;
+  box-shadow:0 -2px 14px var(--sh)}
+#pouch .ph{display:flex;flex-direction:column;gap:1px;font-size:calc(8.6px * var(--fs));opacity:.75;margin:0;
+  flex:0 0 72px;max-width:72px;line-height:1.3}
+#pouch .ph b{font-size:calc(11.5px * var(--fs));opacity:1}
+#pouchList{display:flex;gap:6px;overflow-x:auto;padding-bottom:3px;min-height:52px;flex:1}
+.seed{flex:0 0 auto;width:54px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,#fffdf6,#f2ead8);
+  padding:2px 2px 3px;text-align:center;cursor:grab;position:relative;box-shadow:0 2px 5px rgba(0,0,0,.12)}
+.seed svg{width:100%;height:30px;display:block;overflow:visible}
+.seed .sn{font-size:8px;line-height:1.15;display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.seed .sc{position:absolute;top:-5px;right:-4px;background:var(--leaf);color:#fff;border-radius:999px;font-size:9px;padding:1px 5px;
+  box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.seed.sortable-ghost{opacity:.35}
+.seed.sel{outline:2.5px solid var(--leaf);outline-offset:1px;background:linear-gradient(180deg,#f0ffe4,#dcefc9)}
+#pouch .empty{font-size:calc(11px * var(--fs));opacity:.62;padding:12px 4px}
+
+/* ---- ツールバー ---- */
+.tools{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 46px);z-index:24;display:flex;gap:6px;
+  padding:7px 9px;background:linear-gradient(180deg,rgba(255,252,244,0),rgba(255,252,244,.86) 38%)}
+.tbtn{flex:1;border-radius:13px;border:1px solid var(--line);background:var(--paper);padding:8px 4px 7px;font-size:calc(11.5px * var(--fs));
+  text-align:center;box-shadow:0 3px 9px var(--sh);line-height:1.25}
+.tbtn small{display:block;font-size:calc(9.2px * var(--fs));opacity:.66;margin-top:1px}
+.tbtn:active{transform:translateY(1px)}
+.tbtn.pri{background:linear-gradient(180deg,#63a06b,var(--leaf));color:#fff;border-color:var(--leaf-d)}
+.tbtn.dis{opacity:.42}
+
+/* ============ panels ============ */
+.panel{flex:1;overflow:auto;padding:9px 11px calc(env(safe-area-inset-bottom) + 130px);display:none;position:relative;z-index:16}
+.panel.on{display:block}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:10px 11px;margin-bottom:9px;
+  box-shadow:0 4px 12px var(--sh)}
+h2.t{font-size:calc(15px * var(--fs));margin:1px 0 7px;letter-spacing:.05em}
+.row{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--line);font-size:calc(12.8px * var(--fs))}
+.row:first-of-type{border-top:0}
+.row .sp{flex:1;min-width:0}
+.nm{font-weight:700;font-size:calc(13.2px * var(--fs))}
+.sub{font-size:calc(10.8px * var(--fs));opacity:.74;line-height:1.5;margin-top:1px}
+.subtabs{display:flex;gap:6px;margin-bottom:9px;flex-wrap:wrap}
+.subtab{border:1px solid var(--line);background:var(--paper2);border-radius:999px;padding:5px 12px;font-size:calc(11.4px * var(--fs))}
+.subtab.on{background:var(--leaf);color:#fff;border-color:var(--leaf-d)}
+.sws{display:flex;gap:3px;flex:0 0 auto}
+.sw{width:11px;height:11px;border-radius:3px;border:1px solid rgba(0,0,0,.15)}
+.hr{height:1px;background:var(--line);margin:9px 0}
+.small{font-size:calc(10.8px * var(--fs));opacity:.74;line-height:1.65}
+.btn{border:1px solid var(--line);background:#fffdf7;border-radius:10px;padding:6px 11px;font-size:calc(12.2px * var(--fs));
+  box-shadow:0 2px 5px rgba(0,0,0,.1)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:linear-gradient(180deg,#63a06b,var(--leaf));color:#fff;border-color:var(--leaf-d)}
+.btn.gold{background:linear-gradient(180deg,#f0c869,var(--gold));color:#3a2b0c;border-color:#b98d22}
+.btn.dis{opacity:.4;pointer-events:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+textarea{width:100%;min-height:72px;border-radius:10px;border:1px solid var(--line);padding:8px;font-size:10.2px;
+  background:#fffdf8;color:#3a332b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+input[type=range]{width:100%}
+.pbar2{height:6px;background:rgba(0,0,0,.12);border-radius:4px;overflow:hidden;margin-top:4px}
+.pbar2 i{display:block;height:100%;background:linear-gradient(90deg,#8ec98f,#f3d264)}
+.logrow{font-size:calc(12.2px * var(--fs));line-height:1.6;padding:6px 0;border-top:1px solid var(--line);display:flex;gap:8px}
+.logrow:first-of-type{border-top:0}
+.when{flex:0 0 74px;font-size:calc(10.2px * var(--fs));opacity:.6;line-height:1.4;padding-top:2px}
+.poem{font-size:calc(13.2px * var(--fs));line-height:2.1;white-space:pre-wrap;font-family:"Shippori Mincho B1","Yu Mincho",serif}
+.xbox{border-top:1px solid var(--line);padding:9px 0}
+.xbox:first-of-type{border-top:0}
+.xq{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:calc(12.4px * var(--fs))}
+.hintline{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+.glyph{width:36px;height:42px;display:inline-block;flex:0 0 36px}
+.glyph.gray{filter:grayscale(1);opacity:.42}
+.detailTop{display:flex;gap:11px;align-items:flex-start}
+.detailTop svg{width:76px;height:94px;flex:0 0 76px}
+.big{font-size:calc(18px * var(--fs));font-weight:700;font-family:"Shippori Mincho B1",serif}
+.meter{display:flex;align-items:center;gap:7px;font-size:calc(11.4px * var(--fs));margin-top:3px}
+.meter .mbar{flex:1;height:7px;background:rgba(0,0,0,.12);border-radius:4px;overflow:hidden}
+.meter .mbar i{display:block;height:100%}
+.spark{width:100%;height:46px;display:block;margin-top:4px}
+
+/* ============ nav / sheet / toast ============ */
+nav{position:absolute;left:0;right:0;bottom:0;z-index:22;display:flex;background:rgba(255,252,244,.94);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(6px)}
+nav button{flex:1;border:0;background:none;padding:6px 2px 7px;font-size:calc(9.4px * var(--fs));color:var(--ink2);
+  display:flex;flex-direction:column;align-items:center;gap:1px;position:relative}
+nav button .ic{font-size:17px}
+nav button.on{color:var(--leaf-d)}
+nav button.on::before{content:"";position:absolute;top:0;left:26%;right:26%;height:2px;background:var(--leaf);border-radius:2px}
+nav button .dot{position:absolute;top:4px;right:24%;width:6px;height:6px;border-radius:50%;background:var(--terra);
+  box-shadow:0 0 0 2px rgba(255,252,244,.9)}
+#back{position:absolute;inset:0;z-index:35;background:rgba(18,24,14,.5);opacity:0;pointer-events:none;transition:opacity .25s;backdrop-filter:blur(2px)}
+#back.on{opacity:1;pointer-events:auto}
+#sheet{position:absolute;left:0;right:0;bottom:0;z-index:40;background:linear-gradient(180deg,#fffdf7,#f7f1e3);
+  border-radius:22px 22px 0 0;transform:translateY(115%);transition:transform .3s cubic-bezier(.2,.8,.2,1);
+  padding:6px 14px calc(env(safe-area-inset-bottom) + 14px);max-height:82%;overflow:auto;box-shadow:0 -8px 30px rgba(0,0,0,.3)}
+#sheet.on{transform:translateY(0)}
+.grab{width:38px;height:4px;border-radius:3px;background:rgba(0,0,0,.16);margin:4px auto 8px}
+#toasts{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 56px);z-index:60;display:flex;flex-direction:column;
+  align-items:center;gap:6px;pointer-events:none;padding:0 14px}
+.toast{background:rgba(35,42,30,.9);color:#f9f5e9;font-size:calc(12.2px * var(--fs));padding:7px 14px;border-radius:999px;
+  text-align:center;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+#errbox{position:absolute;left:8px;right:8px;top:calc(env(safe-area-inset-top) + 40px);z-index:99;background:#5c1a12;color:#ffe;
+  display:none;padding:10px;border-radius:10px;font-size:10px;font-family:ui-monospace,monospace;white-space:pre-wrap;max-height:40%;overflow:auto}
+
+/* ============ intro ============ */
+#intro{position:absolute;inset:0;z-index:90;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:26px;color:#f8f4e8;backdrop-filter:blur(10px);
+  background:radial-gradient(120% 55% at 50% 4%,rgba(255,232,170,.20),rgba(255,232,170,0) 62%),
+    linear-gradient(180deg,#3b5b44,#243929 56%,#131e17)}
+#intro h1{font-size:40px;letter-spacing:.3em;margin:0 0 4px;text-shadow:0 3px 18px rgba(0,0,0,.5)}
+#intro .rm{font-size:9.5px;letter-spacing:.42em;opacity:.72;margin-bottom:16px}
+#intro .art{width:230px;height:96px;margin-bottom:12px;opacity:.95}
+#intro p{font-size:calc(12.6px * var(--fs));line-height:2;max-width:310px;margin:0 0 22px}
+#intro button{border:1px solid rgba(255,255,255,.62);background:rgba(255,255,255,.16);color:#fff;border-radius:999px;
+  padding:12px 32px;font-size:14px;letter-spacing:.1em}
+#intro .lg{display:flex;gap:8px;margin-top:20px;font-size:11px;flex-wrap:wrap;justify-content:center}
+#intro .lg b{opacity:.6;font-weight:400;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:3px 10px}
+#intro .lg b.on{opacity:1;background:#fffdf7;color:#26301f;border-color:transparent}
+#intro .libs{margin-top:18px;font-size:9.5px;opacity:.5;letter-spacing:.08em;line-height:1.8}
+
+/* ============ zen ============ */
+#app.zen header,#app.zen nav,#app.zen .tools,#app.zen .chiprow,#app.zen #wx,#app.zen #today,#app.zen #pouch{display:none}
+#app.zen #yardWrap{padding:0}
+#app.zen #yard{border-radius:0;box-shadow:none;min-height:100dvh}
+#zenHint{display:none;position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:26;
+  text-align:center;font-size:11px;color:rgba(255,255,255,.9);text-shadow:0 1px 3px rgba(0,0,0,.7);pointer-events:none}
+#app.zen #zenHint{display:block}
+#zenHaiku{display:none;position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 20px);z-index:26;text-align:center;
+  color:#fffdf3;font-family:"Shippori Mincho B1",serif;font-size:15px;line-height:2.1;white-space:pre-wrap;
+  text-shadow:0 2px 12px rgba(0,0,0,.65);pointer-events:none}
+#app.zen #zenHaiku{display:block}
+
+/* ============ scene extras ============ */
+@keyframes drift{0%{transform:translateX(-160px)}100%{transform:translateX(490px)}}
+@keyframes flick{0%,100%{opacity:0}3%{opacity:.85}7%{opacity:.1}11%{opacity:.7}16%{opacity:0}}
+#flash{position:absolute;inset:0;background:#f2f7ff;opacity:0;pointer-events:none;z-index:17}
+#flash.on{animation:flick 1.5s ease-out 1}
+.cre.walk{animation:walk var(--dur,16s) linear 1 forwards}
+.cre.fly{animation:fly var(--dur,12s) ease-in-out 1 forwards}
+@keyframes walk{0%{left:-10%;opacity:0}10%{opacity:1}88%{opacity:1}100%{left:102%;opacity:0}}
+@keyframes fly{0%{left:-10%;top:60%;opacity:0}12%{opacity:1}30%{top:26%}52%{top:52%}70%{top:18%}88%{opacity:1}100%{left:100%;top:40%;opacity:0}}
+.bird{position:absolute;font-size:13px;opacity:.85;animation:fly var(--dur,20s) linear 1 forwards}
+body.calm .sway,body.calm .cloud,body.calm .ripple{animation:none}
+body.calm #scene{opacity:.55}
+@media (prefers-reduced-motion: reduce){.sway,.cloud,.ripple{animation:none}}
+@media (min-width:520px){ :root{--r:18px} }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="scene"></canvas>
+  <svg id="stars" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <header>
+    <div class="hrow">
+      <div class="logo serif">庭つむぎ<small>NIWA TSUMUGI</small></div>
+      <div class="spacer"></div>
+      <div id="clock"></div>
+      <button class="iconbtn" id="sndBtn" aria-label="sound">🔔</button>
+    </div>
+    <div id="centBar"><i></i></div>
+  </header>
+
+  <div id="stage">
+    <div id="yardWrap">
+      <div class="chiprow" id="stats"></div>
+      <div id="wx"></div>
+      <div id="today" hidden></div>
+
+      <div id="yard">
+        <div id="skyband">
+          <svg id="hills" viewBox="0 0 470 60" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 60 L0 34 Q60 6 118 26 Q166 42 214 16 Q268 -6 320 22 Q372 46 418 24 Q446 11 470 22 L470 60 Z" fill="rgba(90,120,80,.5)"/>
+          </svg>
+          <svg id="treeline" viewBox="0 0 470 76" preserveAspectRatio="none" aria-hidden="true">
+            <g id="tl" fill="#3f5c3a"></g>
+            <rect x="0" y="60" width="470" height="16" fill="#4a6741"/>
+          </svg>
+          <div id="sunmoon"><div class="sun"></div></div>
+        </div>
+        <div id="decor"></div>
+        <div id="beds"></div>
+        <div id="veil"></div>
+        <div id="flash"></div>
+        <div id="yardglow"></div>
+        <div id="creatures"></div>
+      </div>
+
+      <div id="pouch">
+        <div class="ph"><b id="pouchTitle">種</b><span id="pouchHint"></span></div>
+        <div id="pouchList"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="pSeed"></div>
+    <div class="panel" id="pBook"></div>
+    <div class="panel" id="pLog"></div>
+    <div class="panel" id="pSet"></div>
+  </div>
+
+  <div class="tools" id="tools"></div>
+  <div id="zenHint"></div>
+  <div id="zenHaiku"></div>
+  <nav id="nav"></nav>
+
+  <div id="back"></div>
+  <div id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+  <div id="toasts"></div>
+  <div id="errbox"></div>
+
+  <div id="intro">
+    <svg class="art" viewBox="0 0 230 96" aria-hidden="true">
+      <ellipse cx="115" cy="88" rx="96" ry="8" fill="rgba(0,0,0,.25)"/>
+      <path d="M8 78 Q60 66 115 74 T222 76" stroke="#6b4f31" stroke-width="3" fill="none" opacity=".8"/>
+      <g stroke="#4f7a48" stroke-width="2.4" fill="none">
+        <path d="M52 78 C50 60 54 46 52 32"/><path d="M115 78 C113 56 118 40 115 22"/><path d="M176 78 C174 62 178 50 176 40"/>
+      </g>
+      <g fill="#f7c3d6"><circle cx="52" cy="28" r="8"/><circle cx="45" cy="21" r="6"/><circle cx="59" cy="21" r="6"/></g>
+      <g fill="#f6d26a"><circle cx="115" cy="18" r="9"/><circle cx="106" cy="11" r="6.5"/><circle cx="124" cy="11" r="6.5"/><circle cx="115" cy="7" r="6"/></g>
+      <g fill="#b98ae0"><circle cx="176" cy="36" r="7"/><circle cx="170" cy="30" r="5"/><circle cx="182" cy="30" r="5"/></g>
+      <circle cx="115" cy="16" r="3.4" fill="#c96a44"/>
+      <g fill="rgba(255,255,255,.75)"><ellipse cx="34" cy="14" rx="17" ry="6"/><ellipse cx="196" cy="9" rx="13" ry="5"/></g>
+    </svg>
+    <h1 class="serif">庭つむぎ</h1>
+    <div class="rm">NIWA TSUMUGI</div>
+    <p id="iSub"></p>
+    <button id="iStart"></button>
+    <div class="lg" id="iLang"></div>
+    <div class="libs" id="iLibs"></div>
+  </div>
+</div>
+<script id="TXT" type="text/plain">
+# 庭つむぎ データ（書式: key=ja|en|zh / 行内 ; は区切り、本文に ; と | は使わない）
+
+[ui]
+sub=めぐる四季、百年の庭。種一粒から、あなたの庭の歴史を編みます。|A century of seasons, woven from a single seed.|四季流转的百年之庭，从一粒种子编织属于你的庭园史。
+start=庭をはじめる|Begin the garden|开始园艺
+nav_garden=庭|Garden|花园
+nav_seed=種の市|Market|市场
+nav_book=図鑑|Almanac|图鉴
+nav_log=年表|Chronicle|年表
+nav_set=設定|Settings|设置
+year_n=第{n}年|Year {n}|第{n}年
+day_of={s}{d}日|{s} day {d}|{s}第{d}天
+renown=名声|Renown|声望
+dew=雫|Dew|露珠
+compost=たい肥|Compost|堆肥
+cloth=寒冷紗|Frost Cloth|防寒布
+can_n=じょうろ Lv{n}|Can Lv{n}|水壶 Lv{n}
+hg_none=満杯|full|已满
+hg_use=一日すすめる|Pass a day|推进一天
+hg_left=あと{t}|in {t}|还需{t}
+water_all=まき散らす|Water all|整体浇水
+water_done=今日の分 OK|done today|今日已浇
+water_some={n}か所に水|water {n} beds|给{n}块地浇水
+done_watered=今日はもう水をやった|Already watered today|今天已经浇过水
+zen=眺める|Sit and look|眺望
+zen_out=触れて戻る|Touch to return|点击返回
+zen_tip=ただ、庭を眺めています|You are just looking at the garden|只是静静望着庭园
+empty_plot=ここを耕す|Till this bed|开垦这块
+locked_by=名声 {n} で開墾|renown {n} to clear|声望{n}后开垦
+open_it=開墾する|Clear the bed|开垦
+open_cost={n} 雫と {c} たい肥|{n} dew and {c} compost|{n}露珠+{c}堆肥
+no_seed=種袋は空です。種の市へ。|Pouch is empty. Try the market.|种子袋空了，去市场看看。
+drag_hint=ドラッグ／タップ|Drag or tap|拖动或点击
+plant_here=植える|Plant|种植
+buy=購入|Buy|购买
+cost_n={n} 雫|{n} dew|{n} 露珠
+stage_seed=種|Seed|种子
+stage_sprout=発芽|Sprout|发芽
+stage_grow=成長|Growing|生长
+stage_bud=蕾|Bud|花蕾
+stage_bloom=開花|In bloom|开花
+stage_seeded=実を付けた|Seeding|结实中
+stage_dormant=休眠中|Dormant|休眠
+stage_withered=枯れた|Withered|枯萎
+stage_dropped=散った|Gone by|被夺走
+to_bloom=開花まで約{n}日|about {n} days to bloom|约{n}天后开花
+seed_ready=収穫できる|Ready to harvest|可收获
+water_need=水をほしがっている|Thirsty|缺水
+soil_word=土力|Soil|地力
+soil_good=豊かな土|Rich soil|肥沃的土
+soil_bad=痩せた土|Tired soil|贫瘠的土
+water=水やり|Water|浇水
+harvest=収穫|Harvest|收获
+prune=切り戻す|Deadhead|修剪
+pruned=切り戻し済み|deadheaded|已修剪
+prune_tip=花が長もちし、名声が少し増える|Bloom lasts longer, plus a little renown|花期延长，并增加一点声望
+clear=片付ける|Clear|清理
+compost_use=たい肥をすく|Work in compost|施堆肥
+compost_tip=土力が回復し、次の株がよく育つ|Restores soil for the next plant|恢复地力，下茬长得更好
+cloth_use=寒冷紗を掛ける|Put on frost cloth|盖上防寒布
+cloth_tip=次の霜と雪から一株を守る|Shields this bed from the next frost|本株免遭下一次霜雪
+got_seeds=+{n} 種|+{n} seeds|+{n} 颗种子
+got_dew=+{n} 雫|+{n} dew|+{n} 露珠
+new_species=新しい草花！ {sp}|New species! {sp}|新草花！{sp}
+hybrid_born=交配した。{sp} が生まれた|Cross made — {sp} is born|杂交成功，{sp} 诞生了
+visitor_came=来客：{vis}|Visitor: {vis}|访客：{vis}
+event_came={ev}|Event: {ev}|事件：{ev}
+new_season={s}が来た|{s} arrives|{s}来了
+new_year=第{n}年が始まる|Year {n} begins|第{n}年开始
+away_title=留守中の庭|While you were away|不在期间的庭园
+away_none=庭は静かでした。|The garden was quiet.|庭园一片安静。
+away_days={n}日ぶん|{n} days passed|过了{n}天
+close=閉じる|Close|关闭
+tab_species=草花|Plants|植物
+tab_cross=交配表|Crosses|杂交
+tab_vis=来訪者|Visitors|访客
+tab_orn=庭具|Ornaments|庭具
+discovered=発見 {a}/{b}|Found {a}/{b}|已发现 {a}/{b}
+unknown=？？？|???|？？？
+bloomed_n={n}回開花|flowered {n}×|开花{n}次
+vis_n={n}回来訪|visited {n}×|来访{n}次
+shop_title=種の市|Seed Market|种子市场
+shop_hint=名声が上がると、より高価な種が並びます。|Higher renown unlocks dearer seeds.|声望越高，货架上会有更贵的种子。
+mystery=見知らぬ種|Mystery seed|未知种子
+hint_mystery=植えるまで何かもわからない|Unknown until it blooms|种下之前谁也不知道
+pouch=種袋|Seed pouch|种子袋
+own_n=所持 {n}|held {n}|持有 {n}
+ms_title=庭の勲章|Garden Milestones|庭园成就
+ms_earned={a}/{b} 達成|{a}/{b} earned|已达成 {a}/{b}
+reward=報酬 {n} 雫|reward {n} dew|奖励 {n} 露珠
+set_lang=言語|Language|语言
+set_sound=音|Sound|声音
+on_l=入|On|开
+off_l=切|Off|关
+set_vol=音量|Volume|音量
+set_speed=庭の速さ|Garden pace|庭园节奏
+speed_real=本格 3時間/日|Full 3h/day|本格 3小时/天
+speed_slow=ゆったり 30分/日|Easy 30m/day|悠闲 30分/天
+speed_norm=さくさく 5分/日|Brisk 5m/day|轻快 5分/天
+speed_fast=早送り 45秒/日|Fast 45s/day|快进 45秒/天
+speed_now=今すぐ 6秒/日|Instant 6s/day|即时 6秒/天
+set_motion=動きを抑える|Reduce motion|减少动效
+set_font=文字の大きさ|Text size|字号
+set_data=データ|Data|数据
+exp_t=書き出す|Export|导出
+imp_t=読み込む|Import|导入
+copied=コピーしました|Copied|已复制
+imported=読み込みました|Loaded|读取成功
+import_fail=読み込みに失敗|Import failed|读取失败
+reset_t=すべて初期化|Erase everything|全部重置
+reset_q=本当に消しますか？庭も年表も戻りません。|Really erase? Nothing can come back.|确定删除？庭园与年表都无法恢复。
+time_note=庭は実時間で進みます。閉じていても季節は流れ、開いたときにまとめて精算します。|Time runs on your clock. Seasons flow while closed and are settled when you return.|庭园按现实时间流动，关闭后季节依然前进，回来时统一结算。
+save_note=保存はこの端末のブラウザ内（IndexedDB / localStorage）。サーバー送信・広告なし。|Saved in this browser only (IndexedDB / localStorage). No server, no ads.|仅保存在本机浏览器（IndexedDB / localStorage），不上传、无广告。
+libs_note=使用ライブラリ|Libraries used|所用库
+need_pond=池が必要|needs a pond|需要池塘
+century_t=百年が満ちた|A Century Complete|百年已满
+legacy_btn=次の百年へ|Begin the next century|开启下一个百年
+legacy_note=苗床は更地に戻りますが、図鑑・年表・勲章は生き続けます。|Beds are cleared, but almanac, chronicle and honours remain.|苗床清空，但图鉴、年表与成就延续。
+century_n={n}百年目|Century {n}|第{n}个百年
+legacy_q=次の百年を始めますか？|Begin the next century?|要开启下一个百年吗？
+legacy_got=永続のボーナス +1 を得ました|You gained a lasting bonus|获得一项永久加成
+water_word=水分|Water|水分
+all_seasons=四季|all seasons|四季
+hybrid_tag=交配|cross|杂交
+companion_tag=相性良い隣 {n}|{n} good neighbours|相性好邻居 {n}
+cross_note=隣り合う二つが同時に咲くと、ひそかに交配します。|Two neighbours blooming at once may cross.|相邻两株同时开花时会暗中杂交。
+cross_found={a}/{b} 発見|{a}/{b} found|已发现 {a}/{b}
+cross_try=試行 {n}回|{n} attempts|尝试 {n} 次
+cross_chance=成功 {n}%|chance {n}%|成功率 {n}%
+cross_now=いま、隣で咲いている！|Blooming side by side now!|此刻正相邻盛开！
+cross_go=見に行く|Go and look|前往查看
+hint_shape=かたちの手がかり|Shape clue|形状线索
+hint_name=親の名前|Parent names|亲本名字
+hint_buy=解放 {c} 雫|Unlock {c} dew|解锁 {c} 露珠
+hint_revealed=公開済み|revealed|已公开
+cross_discovered=発見済み|Discovered|已发现
+cross_seeds=種の所持 {n}|seeds {n}|持有种子 {n}
+cmp_title=相性の良い隣|Companion plants|伴生伙伴
+cmp_none=まだ気づいていない組み合わせがあります|Some pairs are still undiscovered|还有未被发现的组合
+cmp_note=同じ畝の並びに置くと、どちらもよく育ちます。|Side by side, both grow better.|种在相邻苗床会让彼此长得更好。
+wx_today=今日の空|Today|今日之空
+wx_tom=明日の空|Tomorrow|明日之空
+wx_forecast=風見鶏がないと外れることも|Forecasts can lie without a vane|没有风向标时偶尔会报错
+wx_accurate=風見鶏の予報・的中|Vane forecast · sure|风向标预报・准确
+buff_grow=成長 {n}%|growth {n}%|生长 {n}%
+buff_shop=市の値引き {n}日|market sale, {n}d|市场折扣 {n}天
+stats_line=植えた株 {p} ・ 収穫 {h} ・ 水やり {w} ・ 発見 {d} ・ 拾った種 {f}|planted {p}, harvested {h}, watered {w}, found {d}, seeds picked {f}|种植 {p} · 收获 {h} · 浇水 {w} · 发现 {d} · 拾种 {f}
+tip1=タップで草花の手入れ。多年草は春に目を覚まします。|Tap a plant to tend it. Perennials wake in spring.|点击植物照料，多年生会在春天苏醒。
+tip2=隣り合う二つが同時に咲くと交配することがある。|Neighbours blooming at once may cross.|相邻两株同时开花可能杂交。
+tip3=百年草は、苔と薄からしか生まれません。|Century Grass comes only from moss and silver grass.|百年草只能由苔与芒诞生。
+tip4=枯れた株はたい肥になります。土力は次の株の力。|Wilted plants become compost. Soil feeds the next plant.|枯株化作堆肥，地力滋养下一茬。
+tip5=毎朝、明日の空を見てから水やりを。|Check tomorrow's sky before watering.|每天先看看明天的天空，再决定浇水。
+unknown_hyb=隣り合う二つが同時に咲くと…|Blooms side by side, at once…|相邻两株同时开花时…
+unknown_wild=道の端、風の運ぶまま|Wherever the wind drops it|风落在哪里，它就在哪里
+today_title=今日の庭|Today in the garden|今日的庭园
+today_go=庭へ出る|Enter the garden|进入庭园
+today_none=何もない、静かな一日です。|A quiet day, nothing to report.|没什么可报告的安静一天。
+today_water={n}株が水をほしがっています|{n} plants are thirsty|{n}株缺水
+today_ready={n}株が収穫できます|{n} beds ready|{n}株可收获
+today_bloom={n}株が咲いています|{n} in bloom|{n}株正在开花
+today_evt=できごとが一つあります|One event is waiting|有一件事件待处理
+today_cross=交配しそうな隣があります|A cross looks likely|有可能杂交的邻居
+evt_title=できごと|Events|记事
+owned=設置済み|installed|已设置
+owned_n={n}個設置|{n} placed|已设置 {n} 个
+can_buy=じょうろを大きく {c} 雫|Bigger can, {c} dew|升级水壶 {c} 露珠
+can_max=じょうろは最大|Can is at max|水壶已满级
+compost_get=たい肥 +1|+1 compost|堆肥 +1
+tool_title=道具と手当て|Tools & Care|工具与养护
+can_tip2=一度に3か所へ。升级で全畝に届く|Wets 3 beds at a time. Upgrade to reach all|一次浇3块地，升级后可浇全部
+can_tip3=全畝に一日二回。乾きもゆるやかになる|All beds, twice a day. Soil dries slower|全部苗床每日两次，土也干得慢些
+bridge_tag=赤橋 +20%|Red Bridge +20%|红桥 +20%
+frost_hit=遅霜が{n}株を襲った|Late frost struck {n} plants|晚霜袭击了{n}株
+milestone_done=達成：{m}|Milestone: {m}|成就达成：{m}
+found_seed=道端で種を見つけた：{sp}|Found a seed: {sp}|路边捡到种子：{sp}
+grow_word=成長|Growth|生长
+start_title=はじめかた|First steps|入门三步
+start_tip1=種袋の種を選ぶ → 空き苗床をタップ（ドラッグでも可）|Pick a seed, then tap an empty bed (or drag it)|先选种袋里的种子，再点空苗床（也可拖动）
+start_tip2=水やりは一日一回で十分。雨の日は要りません|Watering once a day is plenty; rain does it for you|每天浇一次就够，下雨天不必浇
+start_tip3=咲いて ✨ が付いたら収穫。種と雫が増えます|When ✨ shows up, harvest — seeds and dew grow|出现 ✨ 即可收获，种子与露珠都会增加
+
+[season]
+春|Spring|春
+夏|Summer|夏
+秋|Autumn|秋
+冬|Winter|冬
+
+[wx]
+clear;快晴|Clear|晴;☀️;1.06;0.34
+cloudy;曇り|Cloudy|阴;⛅;1.00;0.20
+rain;雨|Rain|雨;🌧️;1.32;0.00
+storm;雷雨|Thunderstorm|雷雨;⛈️;1.15;0.00
+mist;霧|Mist|雾;🌫️;1.05;0.10
+frost;霜の朝|Frost|Frost;❄️;0.66;0.10
+snow;雪|Snow|雪;🌨️;0.30;0.05
+
+[shape]
+round=丸い花弁|Round petals|圆瓣
+cup=杯|Cup|杯状
+sun=輪咲き|Daisy-like|菊状
+spire=穂|Spire|穗状
+ball=球|Ball|球状
+bell=鈴|Bell|钟形
+star=星|Star|星形
+frill=ちりめん|Ruffled|皱瓣
+trumpet=喇叭|Trumpet|喇叭形
+plume=房|Plume|穗状
+carpet=絨毯|Carpet|地毯状
+
+[sp]
+dandelion;タンポポ|Dandelion|蒲公英;ball;#f6c445;#b8791b;22;3;5;3;1;*swa;1;2;3;3;愛でられずとも、確かに春を運ぶ|Unloved, yet it still carries spring|无人怜爱，却确实捎来了春天;
+clover;クローバー|Clover|三叶草;ball;#cfe9b4;#8bb46f;17;3;6;4;1;*swa;1;2;3;2;四つ葉を探してしゃがんだ時間がある|Hours spent crouching, hunting four leaves|蹲在地上寻找四叶草的时光;
+moss;苔|Moss|苔;carpet;#6f9d6a;#4e7a52;9;12;40;50;1;*swa;2;9;1;4;待ち時間の最も静かな形|The quietest shape of waiting|等待最安静的形状;
+crocus;春告草|Crocus|番红花;cup;#b98ae0;#f7d774;20;3;4;3;1;ws;1;4;2;5;雪の穴からまず紫が出る|Purple first, through a hole in the snow|先从雪洞里顶出一抹紫;
+snowdrop;雪待草|Snowdrop|雪滴花;bell;#f8f9f4;#cfe0cf;20;4;5;4;1;w;1;5;2;6;下を向いたまま春を数える|Counting spring while looking down|一直低着头数春天;
+tulip;鬱金|Tulip|郁金香;cup;#ea5b74;#f6dc72;34;5;6;4;0;s;1;6;2;8;一枚だけ色が違うことがある|One petal is always a different colour|总有一片花瓣颜色不同;
+pansy;三色菫|Pansy|三色堇;frill;#7d5fc4;#f6e07a;20;4;6;4;1;s;1;6;3;7;顔に見えるのはこちらのせい|The face you see is your own doing|像张脸是我们自己的错觉;
+daffodil;黄水仙|Daffodil|黄水仙;star;#f7e07a;#ef9f3a;36;5;6;4;1;s;1;7;2;9;川沿いに増える性質を残した|Still keeps the habit of spreading by rivers|保留了在河畔蔓延的习性;
+primrose;報春花|Primrose|报春花;ball;#fdeaa8;#f2c14e;26;5;6;4;1;s;1;9;2;11;日陰を好む控えめな豊かさ|Modest abundance that prefers shade|偏爱阴处的节制丰饶;
+bluebell;風鈴草|Bluebell|蓝铃花;bell;#7f9ce8;#e2ebff;32;6;7;4;1;s;2;9;2;12;群れると音が鳴る気がする|Clustered, you half expect a sound|成片时仿佛会发出声音;
+wasurenagusa;勿忘草|Forget-me-not|勿忘草;star;#8fb4ee;#f7ecc9;26;4;7;4;0;s;2;12;3;13;名前はあとから人間が付け足した|Humans added the name afterwards|名字是人类后来加上的;
+cherry;桜|Cherry Blossom|樱花;round;#f7c3d6;#f08fb2;56;9;4;3;1;s;4;40;1;46;散ってからが本番の植物|The real show begins after the fall|花落之后才算正戏;
+poppy;虞美人|Poppy|虞美人;frill;#ee6a45;#3d2b2b;38;4;5;3;0;s;1;7;3;9;風で倒れても咲く|It blooms even after wind lays it down|被风吹倒也照样开;
+cosmos;秋桜|Cosmos|波斯菊;round;#f7b7cf;#f4d94f;48;5;9;4;0;ma;1;8;3;11;茎が長く空に近い|Long stems, closer to the sky|茎很长，离天空更近;
+sunflower;向日葵|Sunflower|向日葵;sun;#f7c02e;#6d431c;62;7;8;4;0;m;2;14;2;19;背を伸ばしすぎてよく折れる|Grew too tall, snaps too often|长得太高所以常折断;
+lavender;ラベンダー|Lavender|薰衣草;spire;#a08ad8;#e0d6f5;40;6;10;5;1;sm;2;13;2;16;乾かしすぎがちょうどいい|Almost too dry is just right|略嫌干燥才刚刚好;
+morningglory;朝顔|Morning Glory|牵牛花;trumpet;#7aa6e8;#f2ecff;42;5;3;2;0;m;1;9;4;9;一日しか持たない前提で育てる|Grown on the assumption of one day|以只开一天为前提来种;
+lotus;蓮|Lotus|莲;star;#f6c8d8;#f3e3a1;58;8;7;4;1;m;3;30;1;34;水と泥の両方が要る|Needs water and mud alike|水和泥都少不了;pond
+fuji;藤|Wisteria|紫藤;plume;#b39ade;#e6dcf7;70;12;10;6;1;s;4;34;1;38;枝の下に房をぶら下げて咲く|Hangs its clusters below the branch|把花串垂挂在枝条之下;
+rose;薔薇|Rose|玫瑰;frill;#d9425c;#f6d67b;44;8;7;4;1;sm;3;26;1;30;棘は手間だった。味にもなる|Thorns were trouble. They taste fine too|刺是麻烦，也能成滋味;
+gentian;竜胆|Gentian|龙胆;bell;#4f5fc4;#dbe3ff;36;6;6;4;1;a;2;13;2;17;苦い根を持つことで有名|Famous for a bitter root|以苦根闻名;
+dahlia;天竺菊|Dahlia|大丽花;sun;#e0507a;#f7d97a;50;7;8;4;0;a;2;15;2;19;幾何学を咲かせる|Blooms in geometry|开成几何图形;
+balloonflower;桔梗|Balloon Flower|桔梗;bell;#7a6fd0;#efeaff;44;6;7;4;1;a;2;12;2;15;蕾が風船なのは本当だった|The buds really are balloons|花蕾真的是气球;
+colchicum;時雨翁|Autumn Crocus|秋水仙;cup;#c98fd0;#f7e6a8;30;6;6;4;0;aw;2;14;2;16;花と葉が別の季節に出る|Leaves and flowers come in different seasons|花与叶各占一个季节;
+mum;菊|Chrysanthemum|菊花;sun;#f6f0e2;#e8b93f;46;9;9;5;1;aw;3;24;2;28;何百年も人の手時間でできている|Made of centuries of human hours|由几百年的手工时间构成;
+spiderlily;彼岸花|Red Spider Lily|石蒜;star;#e23a2f;#f7bcb2;52;6;5;3;1;a;3;22;1;27;葉の前に花が、花の後に葉|Flowers come first, leaves arrive after|先有花，后有叶;
+yuri;百合|Lily|百合;trumpet;#fbf3e4;#e8b24a;62;7;9;5;1;m;3;22;2;24;上を向いて咲くので雨が溜まる|Opens upward, so rain pools inside|朝上开放，所以会积雨水;
+hibiscus;芙容|Hardy Hibiscus|木槿;frill;#f4a3bf;#f7e36a;58;6;4;3;1;m;3;20;2;21;一日でしぼむが、次の蕾が待つ|Fades in a day, but the next bud waits|一日就谢，但下一个花蕾在等;
+susuki;薄|Silver Grass|芒草;plume;#dccfae;#b39f7d;66;5;8;6;1;aw;1;8;3;10;花ではなく実の穂|Not flowers, but seed-heads in the wind|不是花，是风里的种穗;
+hellebore;雪の王冠|Christmas Rose|铁筷子;round;#e2ecd9;#c9d98f;34;7;9;6;1;w;2;15;2;18;寒さほどよく咲く|Blooms better the colder it gets|越冷开得越好;
+cyclamen;仙客来|Cyclamen|仙客来;star;#ee8fb6;#f8ecd8;30;6;8;5;1;w;2;13;2;16;ウサギが耳を担いでいる|As if a rabbit carried its ears|像兔子把耳朵扛在背上;
+botan;牡丹|Tree Peony|牡丹;frill;#e8577f;#f7e6a8;46;8;8;5;1;s;4;26;1;30;花は一年、根は十年|A bloom for a season, roots for ten years|花只一季，根要十年;
+camellia;椿|Camellia|山茶;frill;#d63b4e;#f6d67b;54;8;8;5;1;w;3;26;1;30;散る際首を落とす礼儀|The courtesy of falling whole, head first|凋落时整朵坠地的礼数;
+wintersweet;蝋梅|Wintersweet|蜡梅;round;#f0d269;#dfa63c;48;7;8;5;1;w;3;22;1;26;葉より先に香りが届く|The scent arrives before the leaves|香气比叶子先到;
+edelweiss;雪絨花|Edelweiss|雪绒花;star;#f4efe2;#e8d9a8;26;10;8;6;1;aw;4;44;1;44;実は花ではなく葉|The flowers are really leaves|其实开的是叶子;
+icecherry;氷桜|Ice Cherry|冰樱;round;#eef5ff;#f7c3d6;50;8;6;4;1;w;5;0;1;50;雪の中で散る二度目の花|A second blooming that falls in snow|在雪中飘落的第二次花;h
+mistbell;霧雨の鈴|Mist Bell|雾铃;bell;#a9c4ee;#f0f5ff;40;7;8;5;1;sa;5;0;1;38;鳴らない鈴は霧の中に置く|Bells that never ring are left in the mist|不会响的铃，就放在雾里;h
+sunsetmum;夕焼菊|Sunset Mum|夕霞菊;sun;#f58a3c;#7a3b6e;48;8;9;5;1;a;5;0;1;42;一日でいちばん短い色|The shortest colour of the day|一天中最短的颜色;h
+rainblowlotus;虹蓮|Rainbow Lotus|虹莲;star;#b9a0ee;#f7d6e8;56;9;8;4;1;m;5;0;1;52;二つの水を同時に吸った証拠|Proof it drank two waters at once|同时饮下两种水的证据;h
+moonflower;月下香|Moonflower|月下香;trumpet;#f3f0ff;#cbb8ff;46;7;6;4;1;sm;5;0;1;48;夜にだけ開く約束|A promise to open only at night|只在夜里开放的约定;h
+goldthread;金糸鳥|Golden Thread|金丝菊;star;#f7d94a;#e23a2f;44;7;6;4;1;sa;5;0;1;40;鳴く羽を持つと言われた|Said to have feathers that sing|传说有会鸣叫的羽毛;h
+snowcamellia;雪椿|Snow Camellia|雪椿;frill;#fdeef2;#d63b4e;50;9;9;5;1;w;5;0;1;50;白いのに赤い音を落とす|White, yet it drops a red sound|明明是白的，却落下红色的声音;h
+starfall;星降る鈴|Starfall|星坠铃;bell;#cfd8ff;#f7d94a;38;8;8;5;1;sw;5;0;1;44;高い場所でしか咲かない|Blooms only where the air is thin|只在空气稀薄的高处开放;h
+phoenix;朱雀花|Vermilion Phoenix|朱雀花;frill;#e23a2f;#f7c94a;52;9;8;4;1;aw;5;0;1;50;燃えるが灰は残さない|Burns, but leaves no ash|燃烧却不留下灰;h
+yukikagura;雪神楽|Snow Kagura|雪神乐;round;#eef6ff;#d6b84a;42;8;7;5;1;w;5;0;1;50;鈴の音が雪の上に積もる|The sound of bells piles up on the snow|铃声一层层积在雪上;h
+yurizora;天の百合|Sky Lily|天百合;trumpet;#eaf3ff;#9fc4f0;66;7;8;5;1;m;5;0;1;46;空の高さを測るために咲く|Blooms to measure the height of the sky|为了测量天空的高度而开;h
+yuumurasaki;夕紫|Dusk Violet|夕紫;spire;#9c7fd8;#f3c96a;48;8;9;5;1;sa;5;0;1;44;昼と夜の間だけ開く花|Opens only between day and night|只在白昼与黑夜之间开放;h
+centgrass;百年草|Century Grass|百年草;plume;#f0e6c8;#cbb37e;70;14;16;10;1;*swa;6;0;1;60;苔と薄のあいだにしか生まれない。庭全体が少し早く育つ|Born only between moss and silver grass. The whole garden grows a little faster|只在苔与芒之间诞生，整座庭园会长得快一些;h
+
+[hyb]
+icecherry;snowdrop;cherry
+mistbell;bluebell;gentian
+sunsetmum;mum;poppy
+rainblowlotus;lotus;morningglory
+moonflower;lavender;morningglory
+goldthread;daffodil;spiderlily
+snowcamellia;camellia;hellebore
+starfall;edelweiss;bluebell
+phoenix;spiderlily;camellia
+centgrass;moss;susuki
+yukikagura;wintersweet;snowdrop
+yurizora;yuri;morningglory
+yuumurasaki;fuji;gentian
+
+[cmp]
+rose;lavender;12
+dandelion;clover;8
+cherry;clover;10
+sunflower;cosmos;10
+lavender;mum;9
+lotus;moss;10
+bluebell;daffodil;8
+tulip;pansy;9
+yuri;fuji;10
+botan;moss;8
+wasurenagusa;clover;9
+hibiscus;susuki;7
+spiderlily;moss;7
+gentian;primrose;8
+camellia;crocus;8
+mum;balloonflower;9
+susuki;tulip;-8
+sunflower;tulip;-7
+spiderlily;tulip;-6
+
+[vis]
+butterfly;蝶|Butterfly|蝴蝶;🦋;flower;花の数を数えに来ただけかもしれない
+bee;蜂|Bee|蜜蜂;🐝;scent;働き者はしばしば無愛想
+firefly;蛍|Firefly|萤火虫;✨;pondlight;水がある夜だけ光が移動する
+whiteeye;梅雀|White-eye|绣眼鸟;🐦;tree;高い枝を選ぶ目を持っている
+rabbit;兎|Rabbit|兔子;🐇;clover;春にだけ顔を出す臆病さ
+deer;鹿|Deer|鹿;🦌;moss;苔の薄い場所を選んで立つ
+calico;三毛猫|Calico Cat|三花猫;🐈;renown;庭を自分のものだと信じている
+snail;蝸牛|Snail|蜗牛;🐌;rain;濡れた日のみ全速力で進む
+ladybird;てんとう虫|Ladybird|瓢虫;🐞;dew;露珠を数えているという説
+cricket;松虫|Cricket|蟋蟀;🦗;dark;秋の夜にだけ鳴る
+beetle;鎧虫|Beetle|甲虫;🪲;warm;昼寝に適した葉脈を知っている
+owl;ふくろう|Owl|猫头鹰;🦉;nightsafe;巣箱のある庭を好む
+duck;鴨|Duck|鸭子;🦆;water;池があれば冬も去らない
+
+[orn]
+pond;池|Pond|池塘;🪷;90;水が常にある場所。蓮と蛍を呼ぶ
+lantern;石灯籠|Stone Lantern|石灯笼;🏮;60;夜ごと名声がわずかに高まる
+mossstone;苔石|Mossy Stone|苔石;🪨;70;冬の霜から一株だけ守ることがある
+bridge;赤橋|Red Bridge|红桥;🌉;120;隣同士の距離が交配に少し近くなる
+well;井戸|Well|水井;⛲;150;一日に一度自動的に水が届く
+chime;鐘の風鈴|Wind Chime|风铃;🎐;80;風の音を呼んできな客を増やす
+birdhouse;鳥小屋|Bird House|鸟屋;🛖;110;巣が一つある庭は空に近い
+greenhouse;ガラス室|Greenhouse|玻璃温室;🧊;260;季節を外れても育つことができる
+weathervane;風見鶏|Weather Vane|风向标;🧭;85;明日の空が必ず当たる
+compost;たい肥置き場|Compost Heap|堆肥堆;🍂;75;枯れた株がたい肥に変わる
+birdbath;水浴び台|Bird Bath|水盆;🪣;85;鳥が寄る。夏の乾きも緩む
+arch;花アーチ|Flower Arch|花架;🌸;130;相性の良い隣がさらに伸びる
+potbench;園芸台|Potting Bench|园艺台;🪴;100;収穫のたびに種が一粒余る
+
+[evt]
+e_hanami;🌸;花見の客がやって来た|Hanami guests arrived|赏花的客人来了
+e_bees;🐝;蜜蜂がたくさん働いた|Bees worked hard|蜜蜂辛勤劳作
+e_wind;🌬️;突風が庭を抜けた|A gust crossed the garden|一阵狂风穿过庭园
+e_mushroom;🍄;雨のあとにキノコの輪|Fairy rings after rain|雨后长出蘑菇圈
+e_trader;🧳;種を売る旅人が值引き中|Seed trader is discounting|卖种子的旅人在打折
+e_rainbow;🌈;雨上がりに虹が掛かった|A rainbow after the rain|雨后挂起彩虹
+e_fireflies;✨;蛍が乱舞した夜|Night of dancing fireflies|萤火虫乱舞之夜
+e_contest;📮;庭のコンクールの通知|A garden contest notice|庭园比赛的通知书
+e_child;🧒;近所の子どもが水をやってくれた|Neighbour children watered for you|邻居的孩子帮你浇了水
+e_frostnight;🌙;初霜が下りる夜になった|The first frost is coming|初霜将至之夜
+e_snowman;⛄;雪が庭の形を変えた|Snow redrew the garden|雪重新描绘了庭园
+e_seedwind;🍃;風が種を運んできた|The wind carried seeds in|风把种子吹了进来
+e_herbs;🫖;摘んだ草花で茶を淹れた|Tea from the garden herbs|用采下的草花泡了茶
+
+[mile]
+m_first;最初の一粒|The First Seed|第一粒;1;5
+m_bloom5;五つの咲き音|Five Blooms|五次花开;2;8
+m_bloom100;百の咲き音|One Hundred Blooms|百次花开;3;40
+m_disc10;見知らぬ十個|Ten Unknowns Met|认识十个陌生名字;4;15
+m_disc20;二十種の顔|Twenty Faces|二十张面孔;5;30
+m_disc32;庭の語彙|A Garden Vocabulary|花园的词汇量;6;55
+m_discall;図鑑の空欄が消えた|The Blanks Are Gone|图鉴空格消失;7;120
+m_hyb1;隣人たちの秘密|Neighbours Secret|邻居们的秘密;8;25
+m_hyb5;交配の名手|Cross-Breeder|杂交能手;9;70
+m_hyb13;交配の全貌|All Crosses Known|杂交全解;28;120
+m_cent;百年草を持つ者|Keeper of Century Grass|持有百年草的人;10;100
+m_water100;百回手を濡らした|A Hundred Wet Hands|湿了百次手;11;20
+m_water500;水の記憶|Memory of Water|水的记忆;12;60
+m_harvest50;収穫の手のひら|Harvest Palm|收获的手掌;13;25
+m_harvest300;三百回のありがとう|Three Hundred Thanks|三百次道谢;14;80
+m_year2;二年目無事|Year Two Intact|第二年安好;15;10
+m_year5;五年庭は続く|Five Years On|五年花园仍在;16;30
+m_year10;十年|A Decade|十年;17;60
+m_year25;四半世紀|A Quarter Century|四分之一个世纪;18;120
+m_year50;五十年折り返し|Halfway to a Century|走到一半;19;240
+m_year100;百年|A Century|一百年;20;999
+m_four;四季それぞれ|In All Four Seasons|四季各有;21;35
+m_vis13;庭は公共施設|The Garden Is Public|花园成了公共场所;22;70
+m_orn4;景色の設計者|Designer of Views|景色的设计者;23;50
+m_orn13;庭の完成|The Garden Is Finished|庭园完成;27;150
+m_dew1000;雫の貯水池|A Reservoir of Dew|露珠的蓄水池;24;45
+m_cmp12;良き隣人たち|Good Neighbours|好邻居们;25;40
+m_prune30;鋏の手|Pruning Hands|修剪巧手;26;35
+m_storm;雷雨を越えた|Through the Storm|越过雷雨;29;30
+m_compost10;土を育てる人|Soil Tender|养土之人;30;25
+m_zen30;眺めの時間|Hours of Just Looking|凝望的时光;31;20
+m_evt10;できごと帳|Ten Little Events|十件小事;32;40
+
+[ct]
+plant={sp}を植えた。土は少し痩せている。|Planted {sp}. The soil is a little tired.|种下了{sp}，土壤略见贫瘠。
+bloom1=初めて、{sp}が咲いた。|For the first time, {sp} bloomed.|{sp}第一次开花了。
+hybrid=隣り合う二つの間に、{sp}が生まれた。|Between two neighbours, {sp} was born.|在相邻的两株之间诞生了{sp}。
+wither={sp}は役目を終え土に還った。|{sp} finished its part and returned to soil.|{sp}完成使命回归泥土。
+dormant={sp}は地上から姿を消した。根は生きている。|{sp} vanished above ground. The root lives on.|{sp}在地上消失了，但根还活着。
+visitor=庭に{vis}が現れた。|A {vis} appeared in the garden.|{vis}出现在庭园里。
+event=できごと：{ev}|Event: {ev}|记事：{ev}
+wx=空は{wx}だった。|The sky was {wx}.|天空是{wx}。
+rain=雲が低く庭全体が濡れた。|Low clouds, the whole garden got wet.|云层很低，整个庭园湿润了。
+storm=雷が近く、背の高い花が折れた。|Thunder close by; a tall bloom snapped.|雷声很近，一朵高处的花折了。
+frost=遅霜の夜。{n}株が折り返し点を失った。|A late frost. {n} plants lost their turning point.|晚霜之夜，{n}株失去了转机。
+snow=雪が庭を覆い、すべてが息をひそめた。|Snow covered the garden; all held its breath.|雪覆盖庭园，万物屏息。
+mist=霧が朝を白くした。|Mist whitened the morning.|雾把清晨染白。
+found=道端で{sp}の種を拾った。|Found a seed of {sp} by the road.|路边捡到{sp}的种子。
+ms=勲章：{m}|Milestone: {m}|成就：{m}
+orn=庭に{orn}が据わった。景色が変わった。|Installed {orn}. The view changed.|安置了{orn}，风景不同了。
+compost=枯れた株をたい肥に変えた。|Turned a wilted plant into compost.|把枯株变成了堆肥。
+prune={sp}を切り戻した。花が長もちする。|Deadheaded {sp}. The bloom will last.|修剪了{sp}，花期延长。
+newy=第{n}年、風は同じ方向から吹いた。|Year {n}, the wind blew from the same direction.|第{n}年，风从同一个方向吹来。
+legacy=第{c}百年の種を土に返した。|Sowed the seed of century {c}.|将第{c}个百年的种子归还于土。
+openbed=一つの畝を開墾した。|Cleared a new bed.|开垦了一块新苗床。
+can=じょうろを大きくした。|Got a bigger watering can.|换了更大的水壶。
+
+[yp]
+0;春の風が新しい畝を撫でていった。|Spring wind brushed across the new beds.|春风拂过新的苗床。
+0;雪の下で何かが目を覚ました音がした。|Something stirred beneath the snow.|雪底下有东西醒来的声音。
+0;陽が延びて庭は匂いで語り始めた。|The light lengthened, the garden spoke in scent.|白昼变长，庭园用气息交谈。
+1;蝉の声に花は黙って応じた。|The flowers answered the cicadas by blooming.|花以沉默的盛开回应蝉鸣。
+1;水音が庭の中心で小さく鳴る。|Water sounds keep time at the centre of the garden.|水声在庭园中央轻轻打拍。
+1;長い夕、苗床は蒸し暑い息をした。|Long dusk, the beds breathed hot and damp.|漫长黄昏，苗床呼吸着湿热。
+2;葉が色を変え実の季節が来た。|Leaves turned colour, the season of seed arrived.|叶子变色，结实的季节到了。
+2;虫の音が夕暮れから始まる。|Insect song begins at dusk.|虫鸣从黄昏开始。
+2;種を数える手が土で黒い。|Hands counting seeds are black with soil|数种子的手沾满黑土。
+3;霜が庭を白く塗りすべてが息をひそめた。|Frost painted the garden white, all held its breath.|霜把庭园涂白，万物屏息。
+3;雪の下で百年目がうすく夢を見ている。|Under snow, the century dreams faintly.|雪下一百年正淡淡地做梦。
+3;裸の枝の絵を一日長く眺めた。|Looked longer at the drawing of bare branches.|久久望着光秃枝条的画。
+
+[cp]
+—— 記録 ——|—— Record ——|—— 记录 ——
+植えた種は {p} 粒、咲いた回数は {b}。|{p} seeds were set down, blooming came {b} times.|种下 {p} 粒，开花 {b} 次。
+手は {w} 回水を運び、いちばん通った来客は {vis} だった。|Hands carried water {w} times, the most frequent guest was {vis}.|双手浇水 {w} 次，最常来访的是{vis}。
+空は {wx} の日がいちばん多かった。|The sky was {wx} more often than anything else.|最常出现的天空是{wx}。
+百年のあいだ、まだ誰も見ぬ花を三度土から引き出した。|Three times in a century you drew up a flower no one had seen.|一百年里，三次从土里唤出无人见过的花。
+それでも庭はまだ若い。|And still the garden is young.|而庭园仍然年轻。
+</script>
+<script>
+"use strict";
+/* ==================================================================
+   庭つむぎ — NIWA TSUMUGI
+   単一ファイルのガーデニング育成。
+   [A] データと言語  [B] 状態と時間  [C] シミュレーション
+   [D] 演出（空・粒子・音）  [E] 描画と操作  [F] 起動
+   外部ライブラリ（GSAP / PixiJS / Tone.js / Sortable / confetti / localForage）は
+   すべて存在確認つき。無くてもゲームは成立します。
+   ================================================================== */
+
+/* ---------- [A] 基本 ---------- */
+var LANGS=["ja","en","zh"],LNAME=["日本語","English","中文"];
+var U={},SHAPE={},SEASONS=[],WX={},WXID=[],SP={},SPIDS=[],HYB=[],HYBKEY={},CMP={},VIS=[],VISN={},
+    ORN=[],ORNM={},MILE=[],MILEN={},CT={},EVT={},HAIKU=[[],[],[],[]],CP=[];
+var S=null,lang="ja",view="garden",bookTab="species",flashBeds=[],catching=false,dragging=false;
+
+var DPS=6,DPY=24,CENTURY=100,HGCAP=5,HGNEED=4*3600*1000,LS="niwatsumugi.v3";
+var SPEEDS=[{ms:3*3600*1000,k:"speed_real"},{ms:30*60*1000,k:"speed_slow"},{ms:5*60*1000,k:"speed_norm"},
+            {ms:45*1000,k:"speed_fast"},{ms:6*1000,k:"speed_now"}];
+var PLOTREQ=[0,0,0,0,0,0,22,45,72,105,145,190],NBED=12,BASE_BEDS=6;
+var CANCOST=[0,120,300];
+
+function $(s){return document.querySelector(s)}
+function el(id){return document.getElementById(id)}
+function warn(m){var d=el("errbox");if(!d)return;d.style.display="block";d.textContent+=(d.textContent?"\n":"")+m}
+window.onerror=function(m,l,c){warn("FATAL "+m+" @"+l+":"+c);return false};
+function li(){var i=LANGS.indexOf(lang);return i<0?0:i}
+function pick(s){if(typeof s!=="string")return "";var a=s.split("|"),i=li();return a.length<=i?a[0]:a[i]}
+function t(k,p){var s=U[k];if(!s)return k;return fmt(pick(s),p)}
+function fmt(s,p){if(!s)return "";if(!p)return s;return s.replace(/\{(\w+)\}/g,function(m,k){return p[k]===undefined?m:p[k]})}
+function esc(x){return String(x).replace(/[&<>"]/g,function(c){return c==="&"?"&amp;":c==="<"?"&lt;":c===">"?"&gt;":"&quot;"})}
+function rnd(n){return Math.floor(Math.random()*n)}
+function clamp(v,a,b){return v<a?a:(v>b?b:v)}
+function hasOne(l,x){return l.indexOf(x)>=0}
+
+(function parseTXT(){
+  var raw=el("TXT").textContent.split("\n"),sec="",i,line,f,k,key,val;
+  for(i=0;i<raw.length;i++){
+    line=raw[i].trim();
+    if(!line||line.charAt(0)==="#")continue;
+    if(line.charAt(0)==="["){sec=line.slice(1,-1).trim();continue}
+    if(sec==="ui"||sec==="ct"||sec==="shape"){
+      k=line.indexOf("=");
+      if(k<0){warn("skip "+sec+": "+line);continue}
+      key=line.slice(0,k);val=line.slice(k+1);
+      if(sec==="ui")U[key]=val;else if(sec==="ct")CT[key]=val;else SHAPE[key]=val;
+      continue
+    }
+    f=line.split(";");
+    if(sec==="sp"){
+      if(f.length<17){warn("skip sp: "+f[0]);continue}
+      SP[f[0]]={id:f[0],n:f[1],sh:f[2],c1:f[3],c2:f[4],h:+f[5],germ:+f[6],life:+f[7],wit:+f[8],
+        per:f[9]==="1",seas:f[10],rar:+f[11],price:+f[12],seedn:+f[13],val:+f[14],note:f[15],sp:f[16]}
+    }else if(sec==="hyb"){
+      if(f.length<3)continue;HYB.push(f);HYBKEY[f[1]+"+"+f[2]]=f[0];HYBKEY[f[2]+"+"+f[1]]=f[0]
+    }else if(sec==="cmp"){
+      if(f.length<3)continue;var w=+f[2];CMP[f[0]+"+"+f[1]]=w;CMP[f[1]+"+"+f[0]]=w
+    }else if(sec==="vis"){ if(f.length<5)continue;VIS.push(f);VISN[f[0]]=f }
+    else if(sec==="orn"){ if(f.length<5)continue;ORN.push(f);ORNM[f[0]]=f }
+    else if(sec==="wx"){ if(f.length<5)continue;WX[f[0]]={id:f[0],n:f[1],ic:f[2],g:+f[3],ev:+f[4]};WXID.push(f[0]) }
+    else if(sec==="evt"){ if(f.length<3)continue;EVT[f[0]]={id:f[0],ic:f[1],n:f[2]} }
+    else if(sec==="mile"){ if(f.length<4)continue;MILE.push([f[0],f[1],+f[2],+f[3]]) }
+    else if(sec==="season"){ SEASONS.push(line) }
+    else if(sec==="cp"){ CP.push(line) }
+    else if(sec==="yp"){ var p2=line.split(";");if(p2.length<2)continue;
+      var si=+p2[0];if(si<0||si>3)si=0;HAIKU[si].push(p2.slice(1).join(";")) }
+  }
+  for(i=0;i<MILE.length;i++)MILEN[MILE[i][0]]=MILE[i];
+  SPIDS=Object.keys(SP);
+})();
+function seasonName(i){return pick(SEASONS[i]||"?")}
+function wxOf(id){return WX[id]||WX.clear||{id:"clear",n:"clear|Clear|晴",ic:"☀️",g:1,ev:.3}}
+function wxName(id){return pick(wxOf(id).n)}
+function wxIcon(id){return wxOf(id).ic}
+
+/* ---------- [B] 状態と時間 ---------- */
+function emptyArr(){return [null,null,null,null,null,null,null,null,null,null,null,null]}
+function nArr(n,v){var a=[],i;for(i=0;i<n;i++)a.push(v);return a}
+function baseOpen(){var a=nArr(NBED,false),i;for(i=0;i<BASE_BEDS;i++)a[i]=true;return a}
+function freshState(){
+  return {v:3,lang:null,sound:true,vol:0.55,speed:2,calm:false,fs:1,lastReal:Date.now(),day:0,
+    plots:emptyArr(),soil:nArr(NBED,0.75),cloth:nArr(NBED,false),bedOpen:baseOpen(),
+    pouch:{dandelion:2,tulip:1,crocus:1},dew:24,renown:0,compost:2,clothN:1,hg:1,hgAt:Date.now(),
+    disc:{},bloomed:{},bloomY:{},visited:{},hybTry:{},hintLvl:{},chron:[],ms:{},orn:{},seenSeason:{},
+    wx:{today:"clear",tomA:"clear",tomS:"clear"},wxHist:{},buffs:{grow:0,growM:1,shop:0},
+    lastWaterDay:-9,waterUses:0,can:1,
+    stats:{plant:0,harvest:0,water:0,bloom:0,dewTotal:0,found:0,prune:0,compost:0,cmp:0,evt:0,zen:0,storm:0,open:0},
+    century:1,centDone:false,legacy:0,todaySeen:-1,intro:false,savedAt:0}}
+function normState(o){
+  var d=freshState(),s=Object.assign(d,o||{});
+  s.stats=Object.assign(freshState().stats,(o&&o.stats)||{});
+  s.buffs=Object.assign({grow:0,growM:1,shop:0},(o&&o.buffs)||{});
+  s.wx=Object.assign({today:"clear",tomA:"clear",tomS:"clear"},(o&&o.wx)||{});
+  if(!Array.isArray(s.plots)||s.plots.length!==NBED)s.plots=emptyArr();
+  if(!Array.isArray(s.soil)||s.soil.length!==NBED)s.soil=nArr(NBED,0.75);
+  if(!Array.isArray(s.cloth)||s.cloth.length!==NBED)s.cloth=nArr(NBED,false);
+  if(!Array.isArray(s.bedOpen)||s.bedOpen.length!==NBED)s.bedOpen=baseOpen();
+  for(var bi=0;bi<BASE_BEDS;bi++)s.bedOpen[bi]=true;
+  if(!WX[s.wx.today])s.wx.today="clear";
+  if(!WX[s.wx.tomA])s.wx.tomA=s.wx.today;
+  if(!WX[s.wx.tomS])s.wx.tomS=s.wx.tomA;
+  if(!SPEEDS[s.speed])s.speed=2;
+  if(!s.can)s.can=1;
+  if(!s.bloomY||typeof s.bloomY!=="object")s.bloomY={};
+  if(typeof s.compost!=="number")s.compost=2;
+  if(typeof s.clothN!=="number")s.clothN=1;
+  if(typeof s.awayDays!=="number")s.awayDays=0;
+  return s}
+var IDB=null;
+function initStore(){
+  if(window.localforage&&localforage.createInstance){
+    try{IDB=localforage.createInstance({name:"niwatsumugi",storeName:"save"});IDB.setItem("_p",1).catch(function(){})}catch(e){IDB=null}}}
+function save(){
+  if(!S)return;S.savedAt=Date.now();
+  try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}
+  if(IDB){try{IDB.setItem("save",S).catch(function(){})}catch(e){}}}
+function loadLocal(){
+  var raw=null,o;
+  try{raw=localStorage.getItem(LS)}catch(e){return null}
+  if(!raw)return null;
+  try{o=JSON.parse(raw);if(!o||typeof o!=="object")return null;return normState(o)}catch(e){return null}}
+function pullIDB(after){
+  if(!IDB)return;
+  try{IDB.getItem("save").then(function(o){
+    if(o&&o.plots&&(!S||(o.savedAt||0)>(S.savedAt||0))){S=normState(o);lang=S.lang||lang;if(after)after()}
+  },function(){})}catch(e){}}
+
+function yearOf(d){return Math.floor(d/DPY)+1}
+function seasonOf(d){return Math.floor((d%DPY)/DPS)}
+function dayOfSeason(d){return (Math.floor(d)%DPS)+1}
+function todayIdx(){return Math.floor(S.day)}
+function MS_DAY(){return SPEEDS[S.speed].ms}
+function hgRefresh(){
+  var now=Date.now(),e=now-S.hgAt,got=false;
+  if(e<0){S.hgAt=now;return false}
+  while(e>=HGNEED){e-=HGNEED;if(S.hg<HGCAP){S.hg++;got=true}}
+  S.hgAt=now-e;return got}
+function hgTimeLeft(){if(S.hg>=HGCAP)return 0;var n=HGNEED-(Date.now()-S.hgAt);return n<0?0:n}
+function fmtDur(ms){
+  var m=Math.floor(ms/60000),h;if(m<60)return m+"m";h=Math.floor(m/60);m=m%60;return h+"h"+(m?" "+m+"m":"")}
+
+/* ---------- 補助 ---------- */
+function discCount(){return Object.keys(S.disc).length}
+function hybCount(){var n=0,i;for(i=0;i<HYB.length;i++)if(S.disc[HYB[i][0]])n++;return n}
+function isHyb(id){return !!(SP[id]&&SP[id].sp==="h")}
+function inSeason(sp,seas){var k=["w","s","m","a"][seas];return sp.seas.indexOf("*")>=0||sp.seas.indexOf(k)>=0}
+function spName(id){return SP[id]?pick(SP[id].n):id}
+function bedUnlocked(i){return !!S.bedOpen[i]}
+function openCost(i){return {dew:25*(i-BASE_BEDS+1),compost:1+Math.floor((i-BASE_BEDS)/2)}}
+function openBed(i){
+  var c=openCost(i);
+  if(i<BASE_BEDS||S.bedOpen[i]||S.renown<PLOTREQ[i]){Sfx.no();return}
+  if(S.dew<c.dew||S.compost<c.compost){
+    toast(fmt(t("open_cost"),{n:c.dew,c:c.compost})+" / "+t("dew")+" "+Math.floor(S.dew)+" ・ "+t("compost")+" "+S.compost);Sfx.no();return}
+  S.dew-=c.dew;S.compost-=c.compost;S.bedOpen[i]=true;S.stats.open++;S.renown+=2;log("openbed");
+  Sfx.mile();save();renderBeds(true)}
+function neighbours(i){var cols=3,r=Math.floor(i/cols),c=i%cols,ns=[];
+  if(c>0)ns.push(i-1);if(c<cols-1)ns.push(i+1);if(r>0)ns.push(i-cols);if(r<3)ns.push(i+cols);return ns}
+function soilMult(i){return 0.82+0.36*clamp(S.soil[i]||0,0,1)}
+function cmpPairs(i){
+  var p=S.plots[i],out=[],ns=neighbours(i),k,q,w;
+  if(!p||p.dead)return out;
+  for(k=0;k<ns.length;k++){q=S.plots[ns[k]];if(!q||q.dead)continue;
+    w=CMP[p.sp+"+"+q.sp];if(w!==undefined)out.push({j:ns[k],w:w,other:q.sp})}
+  return out}
+function cmpMult(i){
+  var ps=cmpPairs(i),sum=0,k;
+  for(k=0;k<ps.length;k++)sum+=ps[k].w;
+  if(S.orn.arch&&sum>0)sum=Math.round(sum*1.5);
+  return clamp(1+sum/100,0.78,1.32)}
+function gardenBonus(){
+  var b=1,m=0,i,p;
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead||p.dormant||p.prog<1)continue;
+    if(p.sp==="moss")m++;if(p.sp==="centgrass")b+=0.2}
+  if(m>5)m=5;return b*(1+m*0.03)}
+function buffGrow(){return (S.buffs.grow>0)?(S.buffs.growM||1.1):1}
+function canLevel(){return S.can||1}
+
+function toast(msg,ms){
+  var w=el("toasts"),d=document.createElement("div");
+  if(!w)return;d.className="toast";d.innerHTML=msg;w.appendChild(d);
+  while(w.children.length>3)w.removeChild(w.firstChild);
+  setTimeout(function(){d.style.transition="opacity .6s";d.style.opacity=0;
+    setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d)},650)},ms||2400)}
+function log(ty,p){
+  S.chron.push({t:ty,p:p||{},c:S.century,y:yearOf(S.day),s:seasonOf(S.day),d:dayOfSeason(S.day)});
+  if(S.chron.length>600)S.chron.splice(0,S.chron.length-600)}
+function paramText(k,v){
+  if(k==="sp")return "<b>"+esc(spName(v))+"</b>";
+  if(k==="vis"&&VISN[v])return "<b>"+esc(pick(VISN[v][1]))+"</b>";
+  if(k==="orn"&&ORNM[v])return "<b>"+esc(pick(ORNM[v][1]))+"</b>";
+  if(k==="m"&&MILEN[v])return "<b>"+esc(pick(MILEN[v][1]))+"</b>";
+  if(k==="ev"&&EVT[v])return "<b>"+esc(pick(EVT[v].n))+"</b>";
+  if(k==="wx")return "<b>"+esc(wxName(v))+"</b>";
+  return esc(v)}
+function chronText(e){
+  var src=e.p||{},p={},k;
+  if(e.t==="haiku"){var arr=HAIKU[e.s]||[];return pick(arr[(src.v||0)%Math.max(1,arr.length)]||"")}
+  if(!CT[e.t])return "";
+  for(k in src)if(src.hasOwnProperty(k))p[k]=paramText(k,src[k]);
+  return fmt(pick(CT[e.t]),p)}
+
+/* ---------- [C] シミュレーション ---------- */
+var WXW=[
+  {clear:.32,cloudy:.20,rain:.24,storm:.05,mist:.14,frost:.05},
+  {clear:.42,cloudy:.18,rain:.20,storm:.18,mist:.02},
+  {clear:.32,cloudy:.22,rain:.22,storm:.05,mist:.14,frost:.05},
+  {clear:.22,cloudy:.22,rain:.06,mist:.14,frost:.30,snow:.28}];
+function rollWeather(seas){
+  var w=WXW[seas]||WXW[0],tot=0,k;
+  for(k in w)if(w.hasOwnProperty(k)&&WX[k])tot+=w[k];
+  var r=Math.random()*tot;
+  for(k in w){if(!w.hasOwnProperty(k)||!WX[k])continue;r-=w[k];if(r<=0)return k}
+  return "clear"}
+function forecastOK(){return Math.random()<(S.orn.weathervane?1:0.74)}
+function isWet(){var w=S.wx.today;return w==="rain"||w==="storm"}
+function tick(){
+  if(!S)return false;
+  var now=Date.now(),days=(now-S.lastReal)/MS_DAY(),guard=0,away,step;
+  if(days<0)days=0;
+  if(days<=0.0002){hgRefresh();return false}
+  away=days>0.30;catching=true;
+  while(days>0.0002&&guard<900){step=Math.min(1,days);advance(step);days-=step;guard++}
+  if(days>0.0002){S.day+=days;resolve(days)}
+  catching=false;S.lastReal=now;hgRefresh();
+  if(away)S.awayDays=Math.max(1,Math.round(days));
+  return true}
+function advance(dt){
+  var b=Math.floor(S.day)+1;S.day+=dt;resolve(dt);
+  while(b<=Math.floor(S.day)){onDay(b);b++}}
+function stageOf(p){
+  if(p.dead)return "withered";if(p.dormant)return "dormant";
+  if(p.prog>=1)return p.seeded?"seeded":"bloom";
+  if(p.prog<0.12)return "seed";if(p.prog<0.34)return "sprout";
+  if(p.prog<0.78)return "grow";return "bud"}
+function resolve(dt){
+  var seas=seasonOf(S.day),gb=gardenBonus(),wg=wxOf(S.wx.today).g,bf=buffGrow(),i,p,sp,m;
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead)continue;sp=SP[p.sp];if(!sp)continue;
+    if(p.dormant){if(inSeason(sp,seas)&&p.water>0.2)p.dormant=false;else continue}
+    m=wg*(inSeason(sp,seas)?1:(S.orn.greenhouse?0.55:0.09))*soilMult(i)*cmpMult(i)*bf*gb*(1+0.04*S.century)*(1+0.03*S.legacy);
+    if(p.water<0.12)m*=0.08;else if(p.water<0.35)m*=0.6;
+    if(p.prog<1){p.prog=Math.min(1,p.prog+dt/sp.germ*m);if(p.prog>=1)doBloom(i,sp,p)}
+    else{p.bloomAge+=dt*Math.max(0.25,m)*0.9;
+      if(!p.seeded&&p.bloomAge>=sp.life*0.55)p.seeded=true;
+      if(p.bloomAge>=sp.life*(p.ext||1)+sp.wit)endLife(i,sp,p)}}}
+function doBloom(i,sp,p){
+  var first=!S.disc[sp.id];
+  p.prog=1;p.blooming=true;p.bloomAge=0;p.seeded=false;p.pruned=false;
+  S.stats.bloom++;S.seenSeason[seasonOf(S.day)]=true;S.disc[sp.id]=true;
+  S.bloomed[sp.id]=(S.bloomed[sp.id]||0)+1;
+  if(S.bloomY)S.bloomY[yearOf(S.day)]=(S.bloomY[yearOf(S.day)]||0)+1;
+  if(first){S.renown+=3;addDew(6);log("bloom1",{sp:sp.id});
+    if(!catching){toast(t("new_species",{sp:"<b>"+esc(spName(sp.id))+"</b>"}),2900);Pop.bloom(i)}}
+  checkHybrid(i,sp);checkMile()}
+function endLife(i,sp,p){
+  if(sp.per&&!p.forced){p.dormant=true;p.blooming=false;p.seeded=false;p.bloomAge=0;p.prog=0.55;
+    log("dormant",{sp:sp.id});return}
+  p.dead=true;p.blooming=false;p.seeded=false;p.forced=false;
+  S.soil[i]=clamp((S.soil[i]||0)-0.04,0,1);log("wither",{sp:sp.id})}
+function onDay(d){
+  var seas=seasonOf(S.day),i,p;
+  /* 天候をめくる（明日の実天候はすでに決めておく＝予報の的中率が成立する） */
+  S.wx.today=S.wx.tomA;
+  var rp=rollWeatherPair(seas);
+  S.wx.tomA=rp.actual;S.wx.tomS=rp.shown;
+  S.wxHist[S.wx.today]=(S.wxHist[S.wx.today]||0)+1;
+  applyWeather(seas);
+  /* 水分 */
+  var ev=wxOf(S.wx.today).ev;
+  if(S.orn.birdbath)ev*=0.85;
+  if(canLevel()>=3)ev*=0.9;
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead)continue;
+    p.water=Math.max(0,(p.water||0)-ev);
+    if(isWet())p.water=1;else if(S.wx.today==="mist")p.water=Math.min(1,p.water+0.14);
+    if(isWet())S.soil[i]=clamp((S.soil[i]||0)+0.012,0,1)}
+  if(S.orn.well&&!isWet()&&Math.random()<0.6){
+    for(i=0;i<NBED;i++){p=S.plots[i];if(p&&!p.dead)p.water=Math.min(1,p.water+0.4)}}
+  if(S.orn.birdbath){for(i=0;i<NBED;i++){p=S.plots[i];if(p&&!p.dead)p.water=Math.min(1,p.water+0.06)}}
+  if(S.buffs.grow>0)S.buffs.grow--;
+  if(S.buffs.shop>0)S.buffs.shop--;
+  S.waterUses=0;
+  /* 相性の隣を数える */
+  var ps=0,cp,k;
+  for(i=0;i<NBED;i++){if(!S.plots[i]||S.plots[i].dead)continue;cp=cmpPairs(i);
+    for(k=0;k<cp.length;k++)if(cp[k].w>0&&cp[k].j>i)ps++}
+  if(ps)S.stats.cmp+=ps;
+  rollFoundSeed(seas);rollVisitors();rollEvent(seas);
+  if(S.orn.lantern)S.renown+=1;
+  if(d%DPS===0){log("haiku",{v:rnd(2)});Scene.setSeason(seas);Audio2.setSeason(seas);
+    if(!catching){toast(t("new_season",{s:"<b>"+seasonName(seas)+"</b>"}),3000);Audio2.season()}}
+  if(d%DPY===0){var y=yearOf(S.day);log("newy",{n:y});addDew(8+Math.round(S.renown*0.05));S.renown+=2;
+    if(!catching)toast(t("new_year",{n:y}),3200);
+    if(y>=CENTURY&&!S.centDone)S.centDone=true}
+  checkMile()}
+function rollWeatherPair(seas){
+  var a=rollWeather(seas),b=rollWeather(seas);
+  return {actual:b,shown:forecastOK()?b:a}}
+function applyWeather(seas){
+  var w=S.wx.today,i,p,sp,n=0,saved=0;
+  if(w==="rain"){log("rain")}
+  else if(w==="storm"){
+    log("wx",{wx:"storm"});
+    var tall=-1,th=-1;
+    for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead||!p.blooming)continue;sp=SP[p.sp];if(!sp)continue;
+      if(sp.h>th){th=sp.h;tall=i}}
+    if(tall>=0&&th>=48&&Math.random()<(S.orn.greenhouse?0.18:0.36)){
+      p=S.plots[tall];p.blooming=false;p.prog=0.7;p.bloomAge=0;p.seeded=false;
+      S.stats.storm++;log("storm");
+      if(!catching){toast(t("event_came",{ev:"<b>"+wxIcon("storm")+" "+wxName("storm")+"</b>"}),3000);Scene.flash()}}}
+  else if(w==="mist"){log("wx",{wx:"mist"})}
+  else if(w==="frost"||w==="snow"){
+    var harsh=(w==="frost")?1:0.55;
+    for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead||p.dormant)continue;sp=SP[p.sp];if(!sp)continue;
+      if(inSeason(sp,seasonOf(S.day)))continue;
+      if(S.cloth[i]){S.cloth[i]=false;saved++;continue}
+      if(S.orn.mossstone&&saved===0&&n===0&&Math.random()<0.55){saved++;continue}
+      if(Math.random()>harsh)continue;
+      p.dead=true;p.blooming=false;p.forced=true;n++}
+    if(n>0){log(w==="frost"?"frost":"wx",{n:n,wx:w});
+      if(!catching)toast(t(w==="frost"?"frost_hit":"event_came",{n:n,ev:"<b>"+wxIcon(w)+" "+wxName(w)+"</b>"}),3000)}
+    else if(!catching){toast(t("event_came",{ev:"<b>"+wxIcon(w)+" "+wxName(w)+"</b>"}),2400)}}}
+function rollFoundSeed(seas){
+  var pool=[],known=[],id=null,j,s;
+  if(Math.random()>=0.14)return;
+  for(j=0;j<SPIDS.length;j++){s=SP[SPIDS[j]];
+    if(!isHyb(s.id)&&!(S.pouch[s.id]>0)&&inSeason(s,seas))pool.push(s.id);
+    if(S.disc[SPIDS[j]])known.push(SPIDS[j])}
+  if(known.length&&Math.random()<0.55)id=known[rnd(known.length)];
+  else if(pool.length)id=pool[rnd(pool.length)];
+  if(!id)return;
+  S.pouch[id]=(S.pouch[id]||0)+1;S.stats.found++;log("found",{sp:id});
+  if(!catching)toast(t("found_seed",{sp:"<b>"+esc(spName(id))+"</b>"}),2700)}
+function visOk(k,seas,h,blooms,mossN,treeN,pondN){
+  var warm=(seas===0||seas===1||seas===2);
+  if(k==="flower")return warm&&blooms.length>=3;
+  if(k==="scent")return warm&&(hasOne(blooms,"lavender")||hasOne(blooms,"clover")||hasOne(blooms,"sunflower")||hasOne(blooms,"yuri"));
+  if(k==="pondlight")return seas===1&&!!pondN&&(h<6||h>18);
+  if(k==="tree")return treeN>=1||(!!S.orn.birdhouse&&blooms.length>0);
+  if(k==="clover")return seas===0&&hasOne(blooms,"clover");
+  if(k==="moss")return seas===3&&mossN>=2;
+  if(k==="renown")return S.renown>=55;
+  if(k==="rain")return isWet()&&(seas===0||seas===2);
+  if(k==="dew")return blooms.length>=1&&S.dew>10;
+  if(k==="dark")return seas===2&&(h<6||h>18);
+  if(k==="warm")return seas===1&&h>8&&h<18;
+  if(k==="nightsafe")return (h<6||h>18)&&(!!S.orn.birdhouse||treeN>=1);
+  if(k==="water")return !!pondN&&(seas===2||seas===3);
+  return false}
+function rollVisitors(){
+  var out=[],blooms=[],mossN=0,treeN=0,pondN=S.orn.pond?1:0,i,p,sp,pr,id,
+      seas=seasonOf(S.day),h=new Date().getHours();
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead)continue;sp=SP[p.sp];if(!sp)continue;
+    if(p.prog>=1&&p.sp==="moss")mossN++;
+    if(!p.blooming)continue;blooms.push(sp.id);if(sp.h>=44&&sp.per)treeN++}
+  for(i=0;i<VIS.length;i++)if(visOk(VIS[i][3],seas,h,blooms,mossN,treeN,pondN))out.push(VIS[i][0]);
+  if(!out.length)return;
+  pr=0.26+(S.orn.chime?0.18:0)+(S.orn.birdhouse?0.06:0)+(S.orn.birdbath?0.08:0);
+  if(Math.random()>pr)return;
+  id=out[rnd(out.length)];
+  S.visited[id]=(S.visited[id]||0)+1;S.renown+=1;log("visitor",{vis:id});
+  if(!catching){toast(t("visitor_came",{vis:"<b>"+esc(pick(VISN[id][1]))+"</b>"}),2900);Scene.creature(id)}}
+function crossChance(hid){return (S.disc[hid]?0.5:0.55)+(S.orn.bridge?0.2:0)}
+function checkHybrid(i,sp){
+  var ns=neighbours(i),k,j,q,hid;
+  for(k=0;k<ns.length;k++){j=ns[k];if(j<0||j>=NBED)continue;
+    q=S.plots[j];if(!q||q.dead||!q.blooming)continue;
+    hid=HYBKEY[sp.id+"+"+q.sp];if(!hid)continue;
+    if(S.disc[hid]&&Math.random()>0.16)continue;
+    S.hybTry[hid]=(S.hybTry[hid]||0)+1;
+    if(Math.random()<crossChance(hid)){
+      S.disc[hid]=true;S.pouch[hid]=(S.pouch[hid]||0)+1;S.renown+=10;addDew(12);log("hybrid",{sp:hid});
+      if(!catching){toast(t("hybrid_born",{sp:"<b>"+esc(spName(hid))+"</b>"}),3600);Audio2.mile();Pop.hybrid(i)}
+      return}}}
+/* ---- できごと ---- */
+function bloomsNow(){var a=[],i,p;for(i=0;i<NBED;i++){p=S.plots[i];if(p&&p.blooming&&!p.dead)a.push({i:i,sp:p.sp})}return a}
+function rollEvent(seas){
+  var b=bloomsNow();
+  if(Math.random()>0.19)return;
+  var id=evtPick(seas,b,new Date().getHours());
+  if(!id||!EVT[id])return;
+  evtApply(id,seas,b);
+  S.stats.evt++;log("event",{ev:id});
+  if(!catching){toast(t("event_came",{ev:"<b>"+EVT[id].ic+" "+esc(pick(EVT[id].n))+"</b>"}),3200);Audio2.season()}}
+function evtPick(seas,b,h){
+  var ids=[],i;
+  var bs=[];for(i=0;i<b.length;i++)bs.push(b[i].sp);
+  if(seas===0&&hasOne(bs,"cherry")){ids.push("e_hanami","e_hanami")}
+  if(b.length>=3)ids.push("e_bees","e_contest");
+  if(S.wx.today==="storm")ids.push("e_wind");
+  if(isWet()||S.wx.tomA==="rain")ids.push("e_mushroom","e_child");
+  if(S.dew>60)ids.push("e_trader");
+  if(S.orn.pond&&seas===1&&(h<6||h>18)){ids.push("e_fireflies","e_fireflies")}
+  if(seas===3&&b.length>=2)ids.push("e_snowman");
+  if(seas===2&&(h<7||h>17))ids.push("e_herbs");
+  if(S.compost>0)ids.push("e_seedwind");
+  if(!ids.length)ids.push("e_seedwind","e_mushroom");
+  return ids[rnd(ids.length)]}
+function evtApply(id,seas,b){
+  var sp,x,p,p2,i,n;
+  if(id==="e_hanami"){S.renown+=8;addDew(6)}
+  else if(id==="e_bees"){if(b.length){sp=b[rnd(b.length)].sp;S.pouch[sp]=(S.pouch[sp]||0)+1}}
+  else if(id==="e_wind"){if(b.length){x=b[rnd(b.length)].i;p=S.plots[x];if(p){p.blooming=false;p.prog=0.72;p.bloomAge=0}}}
+  else if(id==="e_mushroom"){addDew(12)}
+  else if(id==="e_trader"){S.buffs.shop=3}
+  else if(id==="e_rainbow"){S.buffs.grow=3;S.buffs.growM=1.18}
+  else if(id==="e_fireflies"){S.renown+=6;addDew(8);Scene.creature("firefly")}
+  else if(id==="e_contest"){S.renown+=4+b.length}
+  else if(id==="e_child"){n=0;for(i=0;i<NBED;i++){p2=S.plots[i];if(p2&&!p2.dead&&p2.water<0.8){p2.water=1;n++}}addDew(Math.min(8,n*2))}
+  else if(id==="e_frostnight"){S.wx.tomA="frost";S.wx.tomS="frost"}
+  else if(id==="e_snowman"){S.renown+=3}
+  else if(id==="e_seedwind"){sp=pickSeedForSeason(seas);if(sp){S.pouch[sp]=(S.pouch[sp]||0)+1;S.stats.found++}}
+  else if(id==="e_herbs"){addDew(10)}}
+function pickSeedForSeason(seas){
+  var pool=[],i,s;
+  for(i=0;i<SPIDS.length;i++){s=SP[SPIDS[i]];if(!isHyb(s.id)&&inSeason(s,seas))pool.push(s.id)}
+  return pool.length?pool[rnd(pool.length)]:null}
+/* ---- 勲章 ---- */
+function mileTest(c){
+  var st=S.stats,y=yearOf(S.day);
+  if(c===1)return st.plant>=1;if(c===2)return st.bloom>=5;if(c===3)return st.bloom>=100;
+  if(c===4)return discCount()>=10;if(c===5)return discCount()>=20;if(c===6)return discCount()>=32;
+  if(c===7)return discCount()>=SPIDS.length;if(c===8)return hybCount()>=1;if(c===9)return hybCount()>=5;
+  if(c===10)return !!S.disc.centgrass;if(c===11)return st.water>=100;if(c===12)return st.water>=500;
+  if(c===13)return st.harvest>=50;if(c===14)return st.harvest>=300;
+  if(c===15)return y>=2;if(c===16)return y>=5;if(c===17)return y>=10;
+  if(c===18)return y>=25;if(c===19)return y>=50;if(c===20)return !!S.centDone;
+  if(c===21)return Object.keys(S.seenSeason).length>=4;
+  if(c===22)return Object.keys(S.visited).length>=VIS.length;
+  if(c===23)return Object.keys(S.orn).length>=4;if(c===24)return st.dewTotal>=1000;
+  if(c===25)return st.cmp>=12;if(c===26)return st.prune>=30;if(c===27)return Object.keys(S.orn).length>=ORN.length;
+  if(c===28)return hybCount()>=HYB.length;if(c===29)return st.storm>=1;if(c===30)return st.compost>=10;
+  if(c===31)return st.zen>=30;if(c===32)return st.evt>=10;
+  return false}
+function checkMile(){
+  var i,m;
+  for(i=0;i<MILE.length;i++){m=MILE[i];if(S.ms[m[0]])continue;
+    if(!mileTest(m[2]))continue;
+    S.ms[m[0]]={at:Math.floor(S.day)};addDew(m[3]);log("ms",{m:m[0]});
+    if(!catching){toast(t("milestone_done",{m:"<b>"+esc(pick(m[1]))+"</b>"}),3200);Audio2.mile();Pop.milestone()}}}
+function addDew(n){if(n<=0)return;S.dew+=n;S.stats.dewTotal+=n}
+/* ---------- [D] 音 ---------- */
+var SCALE=[[0,2,4,7,9,12],[2,4,7,9,11,14],[0,3,5,7,10,12],[7,10,12,15,19]];
+var BASEF=[261.63,293.66,220.0,196.0];
+var SFXP={
+  tap:[[880,.06,"triangle",.05,0,0]],
+  no:[[180,.16,"sine",.07,0,120]],
+  plant:[[392,.14,"triangle",.09,0,588],[588,.2,"sine",.05,.07,784]],
+  water:[[1050,.16,"sine",.1,0,300],[760,.12,"sine",.05,.05,280]],
+  prune:[[1320,.05,"square",.04,0,0],[1560,.05,"square",.04,.06,0]],
+  harvest:[[659.25,.18,"sine",.07,0,0],[830.6,.18,"sine",.07,.08,0],[987.77,.2,"sine",.07,.16,0],[1318.5,.26,"sine",.05,.24,0]],
+  mile:[[523.25,.4,"sine",.07,0,0],[659.25,.4,"sine",.07,.07,0],[783.99,.45,"sine",.06,.14,0],[1046.5,.6,"sine",.05,.21,0]],
+  open:[[392,.2,"triangle",.07,0,0],[523.25,.24,"triangle",.06,.09,0],[659.25,.3,"sine",.05,.18,0]]};
+var Audio2={
+  mode:"none",ready:false,on:true,vol:.55,quiet:false,
+  ctx:null,mst:null,wind:null,padF:null,timer:null,
+  T:null,Td:null,Tpad:null,Tblip:null,Twind:null,Train:null,Tlfo:null,
+  init(){
+    if(this.ready)return;this.ready=true;
+    var TT=window.Tone;
+    if(TT&&TT.start&&TT.PolySynth){
+      try{
+        this.T=TT;
+        var go=TT.start?TT.start():null;
+        this.Td=TT.getDestination?TT.getDestination():TT.Destination;
+        var rev=new TT.Reverb({decay:5.2,wet:.32});rev.connect(this.Td);
+        this.Tpad=new TT.PolySynth(TT.Synth,{volume:-19,
+          oscillator:{type:"triangle"},
+          envelope:{attack:.9,decay:1.6,sustain:.22,release:3.2}}).connect(rev);
+        this.Tblip=new TT.Synth({volume:-16,oscillator:{type:"sine"},
+          envelope:{attack:.004,decay:.16,sustain:0,release:.12}}).connect(rev);
+        this.Twind=new TT.Noise("pink");
+        var wf=new TT.Filter(420,"lowpass");wf.Q.value=.6;
+        this.TwindG=new TT.Gain(0.0);
+        this.Twind.connect(wf);wf.connect(this.TwindG);this.TwindG.connect(this.Td);this.Twind.start();
+        this.Tlfo=new TT.LFO(0.06,300,760);this.Tlfo.connect(wf.frequency);this.Tlfo.start();
+        this.Train=new TT.Noise("white");
+        var rf=new TT.Filter(1400,"bandpass");rf.Q.value=.7;
+        this.TrainG=new TT.Gain(0);this.Train.connect(rf);rf.connect(this.TrainG);this.TrainG.connect(this.Td);this.Train.start();
+        this.mode="tone";
+        if(go&&go.then)go.then(this.applyVol.bind(this),function(){});else this.applyVol();
+        this.ambientLoop();this.setSeason(S?seasonOf(S.day):0);this.rainLevel();
+        return
+      }catch(e){this.mode="none"}
+    }
+    this.initWeb()},
+  initWeb(){
+    var C=window.AudioContext||window.webkitAudioContext;if(!C)return;
+    try{this.ctx=new C()}catch(e){return}
+    var c=this.ctx,i;
+    this.mst=c.createGain();this.mst.gain.value=this.on?this.vol*.85:0;this.mst.connect(c.destination);
+    var len=Math.floor(c.sampleRate*2),b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0),l=0,w;
+    for(i=0;i<len;i++){w=Math.random()*2-1;l=(l+.02*w)/1.02;d[i]=l*3.6}
+    var src=c.createBufferSource();src.buffer=b;src.loop=true;
+    var lp=c.createBiquadFilter();lp.type="lowpass";lp.frequency.value=430;
+    var g=c.createGain();g.gain.value=.05;
+    var lfo=c.createOscillator();lfo.frequency.value=.06;
+    var lg=c.createGain();lg.gain.value=.032;
+    lfo.connect(lg);lg.connect(g.gain);src.connect(lp);lp.connect(g);g.connect(this.mst);
+    src.start();lfo.start();this.wind=g;
+    var pad=c.createGain();pad.gain.value=.026;
+    var plp=c.createBiquadFilter();plp.type="lowpass";plp.frequency.value=1050;
+    pad.connect(plp);plp.connect(this.mst);this.padF=plp;
+    var fs=[196,261.63,329.63,392];
+    for(i=0;i<fs.length;i++){var o=c.createOscillator();o.type=(i%2)?"sine":"triangle";o.frequency.value=fs[i];
+      var og=c.createGain();og.gain.value=.24;o.connect(og);og.connect(pad);o.start()}
+    this.mode="web";this.ambientLoop()},
+  wTone(f,dur,type,gain,when,to){
+    var c=this.ctx,t,o,g;if(!c)return;
+    t=c.currentTime+(when||0);o=c.createOscillator();g=c.createGain();
+    o.type=type||"sine";o.frequency.setValueAtTime(f,t);
+    if(to)o.frequency.exponentialRampToValueAtTime(Math.max(40,to),t+dur);
+    g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(gain||.1,t+.012);
+    g.gain.exponentialRampToValueAtTime(.0008,t+dur);
+    o.connect(g);g.connect(this.mst);o.start(t);o.stop(t+dur+.05)},
+  applyVol(){
+    var v=this.on?this.vol:0;
+    if(this.mode==="tone"&&this.Td){try{this.Td.volume.value=v<=0?-90:(-42+v*36)}catch(e){}}
+    if(this.mode==="web"&&this.mst){try{this.mst.gain.setTargetAtTime(v*.85,this.ctx.currentTime,.12)}catch(e){}}},
+  setOn(v){this.on=v;if(S)S.sound=v;this.applyVol();this.rainLevel();uiSoundBtn();save()},
+  setVol(v){this.vol=v;if(S)S.vol=v;this.applyVol();save()},
+  sfx(kind){
+    var p=SFXP[kind];if(!p||!this.on)return;
+    if(this.mode==="tone"){
+      try{var now=this.T.now();
+        for(var i=0;i<p.length;i++){var d=p[i];
+          this.Tblip.triggerAttackRelease(d[0],"16n",now+d[4],clamp(d[3]*2.2,.05,.9))}}catch(e){}
+      return}
+    if(this.mode==="web"){for(var j=0;j<p.length;j++)this.wTone(p[j][0],p[j][1],p[j][2],p[j][3],p[j][4],p[j][5])}},
+  setSeason(s){
+    if(this.mode==="tone"){
+      try{this.TwindG.gain.ramp(this.on?(0.02+0.014*s):0,1)}catch(e){}return}
+    if(this.mode==="web"&&this.padF){try{this.padF.frequency.setTargetAtTime([1150,900,760,620][s]||1000,this.ctx.currentTime,2)}catch(e){}}},
+  rainLevel(){
+    if(this.mode!=="tone"||!this.TrainG)return;
+    var w=S?S.wx.today:"clear",lv=(w==="rain")?.05:(w==="storm"?.085:0);
+    try{this.TrainG.gain.ramp(this.on?lv:0,.9)}catch(e){}},
+  gust(){
+    if(this.mode==="tone"&&this.TwindG){try{this.TwindG.gain.ramp(this.on?.09:0,.5);
+      this.TwindG.gain.ramp(this.on?(0.02+0.014*seasonOf(S.day)):0,1.6)}catch(e){}return}
+    if(this.mode==="web"&&this.wind){var t=this.ctx.currentTime;
+      try{this.wind.gain.setTargetAtTime(.11,t,.5);this.wind.gain.setTargetAtTime(.05,t+1.4,1.2)}catch(e){}}},
+  chirp(){
+    if(!this.on)return;
+    var b=2100+Math.random()*1200,n=2+rnd(3),i;
+    if(this.mode==="tone"){try{for(i=0;i<n;i++)this.Tblip.triggerAttackRelease(b*(0.9+Math.random()*0.35),"32n",this.T.now()+i*.11,.14)}catch(e){}return}
+    if(this.mode==="web")for(i=0;i<n;i++)this.wTone(b*(0.9+Math.random()*0.35),.07,"sine",.045,i*.11,b*1.3)},
+  cricket(){
+    if(!this.on)return;
+    if(this.mode==="tone"){try{for(var i=0;i<4;i++)this.Tblip.triggerAttackRelease(4400,"64n",this.T.now()+i*.09,.07)}catch(e){}return}
+    if(this.mode==="web")for(var j=0;j<4;j++)this.wTone(4600,.028,"square",.022,j*.09)},
+  season(){this.sfx("open")},mile(){this.sfx("mile")},
+  ambientLoop(){
+    if(this.timer)return;
+    var me=this;
+    this.timer=setInterval(function(){
+      if(document.hidden||!me.on||!S||me.quiet)return;
+      var s=seasonOf(S.day),h=new Date().getHours(),r=Math.random();
+      if((s===0||s===1)&&h>5&&h<19&&r<.55)me.chirp();
+      else if(s===2&&(h<6||h>18)&&r<.5)me.cricket();
+      else if(s===3&&r<.2)me.gust();
+      else if(r<.12)me.gust();
+      if(me.mode==="tone"&&r<.5)me.note(s);
+    },7000)},
+  note(s){
+    if(this.mode!=="tone"||!this.Tpad)return;
+    try{
+      var sc=SCALE[s]||SCALE[0],n=1+rnd(2),i,now=this.T.now(),arr=[];
+      for(i=0;i<n;i++)arr.push(BASEF[s]*Math.pow(2,(sc[rnd(sc.length)]||0)/12));
+      this.Tpad.triggerAttackRelease(arr,n===1?"2n":"1n",now,.5)
+    }catch(e){}}};
+var Sfx={tap:function(){Audio2.sfx("tap")},no:function(){Audio2.sfx("no")},plant:function(){Audio2.sfx("plant")},
+  water:function(){Audio2.sfx("water")},harvest:function(){Audio2.sfx("harvest")},mile:function(){Audio2.sfx("mile")},
+  prune:function(){Audio2.sfx("prune")},open:function(){Audio2.sfx("open")}};
+
+/* ---------- [D] 空と粒子 ---------- */
+var PAL=[
+  ["#cfe3f2","#f8e8ef","#a8c48c","#5f8257"],
+  ["#bfe0f2","#e9f3d9","#86b06a","#3f6a3f"],
+  ["#d9e2ea","#f5dfc4","#b99a5e","#6f5b3c"],
+  ["#dbe4ea","#eef2f4","#a4b1a4","#6d7a74"]];
+function hexc(h){h=h.replace("#","");if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)]}
+function mix(a,b,f){var x=hexc(a),y=hexc(b);
+  return "rgb("+Math.round(x[0]+(y[0]-x[0])*f)+","+Math.round(x[1]+(y[1]-x[1])*f)+","+Math.round(x[2]+(y[2]-x[2])*f)+")"}
+function mixHex(a,b,f){var x=hexc(a),y=hexc(b),i,c="#";
+  for(i=0;i<3;i++){var v=Math.round(x[i]+(y[i]-x[i])*f);c+=(v<16?"0":"")+v.toString(16)}return c}
+function nightF(h){
+  if(h<5)return .66;if(h<7.5)return .66*(7.5-h)/2.5;
+  if(h>17&&h<=19.5)return .8*(h-17)/2.5;if(h>19.5)return .8;return 0}
+var Scene={
+  app:null,g:null,c2:null,w:0,h:0,ps:[],mode:"none",weather:"clear",season:0,inited:false,t:0,
+  init(){
+    if(this.inited)return;this.inited=true;
+    var cv=el("scene"),d=Math.min(2,window.devicePixelRatio||1);
+    if(window.PIXI&&PIXI.Application){
+      try{
+        this.app=new PIXI.Application({width:Math.max(2,this.w),height:Math.max(2,this.h),
+          backgroundAlpha:0,antialias:false,resolution:d,autoDensity:true,view:cv});
+        this.g=new PIXI.Graphics();this.app.stage.addChild(this.g);
+        this.pixi=true
+      }catch(e){this.app=null}
+    }
+    if(!this.app){this.c2=cv.getContext("2d");this.cv=cv;this.dpr=d}
+    this.resize();
+    this.stars();this.treeline(seasonOf(S?S.day:0));
+    var me=this;
+    requestAnimationFrame(function f(){me.frame();requestAnimationFrame(f)})},
+  resize(){
+    var host=el("app"),r=host?host.getBoundingClientRect():{width:390,height:700};
+    this.w=Math.max(2,r.width|0);this.h=Math.max(2,r.height|0);
+    var d=Math.min(2,window.devicePixelRatio||1);
+    if(this.app){try{this.app.renderer.resize(this.w,this.h)}catch(e){}}
+    if(this.c2){var cv=this.cv;cv.width=this.w*d;cv.height=this.h*d;this.c2.setTransform(d,0,0,d,0,0)}
+    this.seed(true)},
+  setSeason(s){this.season=s;this.treeline(s);this.seed()},
+  setWeather(w){if(w&&w!==this.weather){this.weather=w;this.seed()}},
+  modeFor(){
+    var w=this.weather,s=this.season,h=this.hour(),night=(h<6||h>18.4);
+    if(w==="rain")return "rain";if(w==="storm")return "storm";if(w==="snow")return "snow";
+    if(w==="frost")return "frost";if(w==="mist")return "mist";
+    if(night)return s===1?"firefly":"frost";
+    if(s===0)return "petal";if(s===1)return "spark";if(s===2)return "leaf";return "frost"},
+  hour(){var d=new Date();return d.getHours()+d.getMinutes()/60},
+  seed(force){
+    var m=this.modeFor();
+    if(!force&&m===this.mode)return;
+    this.mode=m;
+    var cnt={petal:24,leaf:22,snow:0,spark:16,firefly:14,rain:80,storm:110,mist:12,frost:16}[m]||14;
+    if(S&&S.calm)cnt=Math.round(cnt*.35);
+    this.ps=[];for(var i=0;i<cnt;i++)this.ps.push(this.p(true))},
+  p(init){
+    var m=this.mode,W=this.w,H=this.h;
+    var p={x:Math.random()*W,y:init?Math.random()*H:-12,v:.3+Math.random()*.8,ph:Math.random()*6.283,
+      s:1.5+Math.random()*3,a:.4+Math.random()*.6,bl:Math.random()*6.283,d:.4+Math.random()*.7};
+    if(m==="snow"){p.v=.25+Math.random()*.5;p.s=1+Math.random()*2.2}
+    if(m==="leaf")p.v=.5+Math.random()*.7;
+    if(m==="rain"||m==="storm"){p.v=(m==="storm"?8:6)+Math.random()*5;p.s=7+Math.random()*8;p.a=.18}
+    if(m==="firefly"){p.y=Math.random()*H;p.v=-.05-Math.random()*.12;p.a=.2+Math.random()*.7}
+    if(m==="spark"){p.v=.08+Math.random()*.22;p.s=1+Math.random()*1.6}
+    if(m==="mist"){p.v=.06+Math.random()*.1;p.s=26+Math.random()*40;p.a=.10+Math.random()*.07}
+    if(m==="frost"){p.v=.18+Math.random()*.3;p.s=.8+Math.random()*1.5;p.a=.3+Math.random()*.4}
+    return p},
+  /* 描画プリミティブ（Pixi / 2D 共通） */
+  circle(x,y,r,col,a){
+    if(this.g){this.g.lineStyle(0);this.g.beginFill(hexc(col)[0]*65536+hexc(col)[1]*256+hexc(col)[2],a);
+      this.g.drawCircle(x,y,r);this.g.endFill();return}
+    var c=this.c2;if(!c)return;c.globalAlpha=a;c.fillStyle=col;c.beginPath();c.arc(x,y,r,0,6.283);c.fill()},
+  ell(x,y,rx,ry,col,a){
+    if(this.g){this.g.lineStyle(0);this.g.beginFill(hexc(col)[0]*65536+hexc(col)[1]*256+hexc(col)[2],a);
+      this.g.drawEllipse(x,y,rx,ry);this.g.endFill();return}
+    var c=this.c2;if(!c)return;c.globalAlpha=a;c.fillStyle=col;c.beginPath();c.ellipse(x,y,rx,ry,0,0,6.283);c.fill()},
+  line(x1,y1,x2,y2,w,col,a){
+    if(this.g){this.g.lineStyle(w,hexc(col)[0]*65536+hexc(col)[1]*256+hexc(col)[2],a);
+      this.g.moveTo(x1,y1);this.g.lineTo(x2,y2);this.g.lineStyle(0);return}
+    var c=this.c2;if(!c)return;c.globalAlpha=a;c.strokeStyle=col;c.lineWidth=w;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()},
+  frame(){
+    var m=this.mode,i,p,tw,tb;
+    this.t+=1;
+    if(this.g)this.g.clear();else if(this.c2){this.c2.clearRect(0,0,this.w,this.h);this.c2.globalAlpha=1}
+    if(!this.ps.length)return;
+    for(i=0;i<this.ps.length;i++){
+      p=this.ps[i];p.ph+=.02;p.y+=p.v;p.x+=Math.sin(p.ph)*.6+(m==="leaf"?.35:0)+(m==="mist"?.5:0);
+      if(p.y>this.h+20||p.y<-30||p.x<-40||p.x>this.w+40){this.ps[i]=this.p(false);continue}
+      if(m==="petal")this.ell(p.x,p.y,p.s*1.5,p.s*.85,"#f7c9d8",p.a);
+      else if(m==="leaf"){this.ell(p.x,p.y,p.s*1.7,p.s*.85,Math.sin(p.ph*3)>0?"#d9a05b":"#c07a44",p.a)}
+      else if(m==="snow")this.circle(p.x,p.y,p.s*.9,"#ffffff",p.a);
+      else if(m==="spark"){tw=.4+.6*Math.abs(Math.sin(p.ph*3));this.circle(p.x,p.y,p.s,"#fff5c8",p.a*tw)}
+      else if(m==="frost"){tw=.3+.7*Math.abs(Math.sin(p.ph*2));this.circle(p.x,p.y,p.s,"#eaf4ff",p.a*tw*.8)}
+      else if(m==="firefly"){p.bl+=.06;tb=Math.max(0,Math.sin(p.bl));
+        this.circle(p.x,p.y,3.6,"#f7e98a",p.a*tb*.22);this.circle(p.x,p.y,1.8,"#fbf6b4",p.a*tb)}
+      else if(m==="mist")this.circle(p.x,p.y,p.s,"#eef4f6",p.a)
+      else if(m==="rain"||m==="storm"){this.line(p.x,p.y,p.x-1.6,p.y+p.s,1.1,"#dfeaf5",p.a)}
+      if(this.c2)this.c2.globalAlpha=1}
+  },
+  sky(){
+    if(!S)return;
+    var s=seasonOf(S.day),p=PAL[s],h=this.hour(),n=nightF(h),w=this.weather,r=document.documentElement.style;
+    var m1="#8e99a8",m2="#9aa3ac";
+    if(w==="mist"){m1="#ccd6d8";m2="#dee6e6"}
+    if(w==="rain"||w==="storm"){m1="#7f8a99";m2="#8c96a2"}
+    var f=(w==="clear")?0:(w==="cloudy"?.28:.44);
+    var c1=mixHex(p[0],m1,f),c2=mixHex(p[1],m2,f),c3=mixHex(p[2],m1,f*.7),c4=mixHex(p[3],m1,f*.7);
+    r.setProperty("--s1",mix(c1,"#262f4d",n));
+    r.setProperty("--s2",mix(c2,"#3b3f5e",n*.85));
+    r.setProperty("--s3",mix(c3,"#26304a",n*.7));
+    r.setProperty("--s4",mix(c4,"#151c2b",n*.7));
+    var v=el("veil"),gw=el("yardglow"),st=el("stars");
+    if(v)v.style.opacity=(n*.8).toFixed(3);
+    if(gw)gw.style.opacity=((h>16.5&&h<19.5)?1:0)*1;
+    if(st)st.style.opacity=n>.25?((n-.25)/.55).toFixed(2):0;
+    this.sun(n)},
+  sun(n){
+    var host=el("sunmoon"),band=el("skyband");if(!host||!band)return;
+    var h=this.hour(),day=(h>=6&&h<=18.4),fr=day?(h-6)/12.4:((h>18.4?h-18.4:h+5.6)/11.6);
+    fr=clamp(fr,0,1);
+    var bw=band.clientWidth||390,bh=band.clientHeight||118;
+    host.style.left=(6+fr*88)+"%";
+    host.style.top=(bh*0.94-Math.sin(fr*Math.PI)*bh*0.74)+"px";
+    if(day)host.classList.remove("moon");else host.classList.add("moon");
+    host.style.opacity=(this.weather==="rain"||this.weather==="storm")?.25:(this.weather==="mist"?.5:1)},
+  stars(){
+    var svg=el("stars");if(!svg)return;
+    var a=[],i,x,y,r;
+    for(i=0;i<70;i++){x=(Math.random()*100).toFixed(1);y=(Math.random()*100).toFixed(1);r=(.5+Math.random()*1.3).toFixed(2);
+      a.push('<circle cx="'+x+'%" cy="'+y+'%" r="'+r+'" fill="#fffdf2" opacity="'+(.4+Math.random()*.6).toFixed(2)+'"/>')}
+    svg.innerHTML=a.join("")},
+  treeline(s){
+    var g=el("tl");if(!g)return;
+    var fill=["#4d7a4a","#3f6b3d","#a8752f","#6d766d"][s],fill2=["#5f8d55","#4c7a46","#c08a3a","#7d857e"][s],
+        dot=["#f7c3d6","#f6d26a","#d9743a","#ffffff"][s],a=[],x,i,rr;
+    x=-10;
+    while(x<480){
+      rr=10+((x*7919)%13);
+      a.push('<ellipse cx="'+x+'" cy="'+(62-rr*.35).toFixed(1)+'" rx="'+rr+'" ry="'+(rr*.78).toFixed(1)+'" fill="'+((x%2)?fill:fill2)+'"/>');
+      x+=rr*1.05}
+    if(s!==3)for(i=0;i<16;i++)a.push('<circle cx="'+((i*97)%470)+'" cy="'+(34+((i*53)%22))+'" r="2.4" fill="'+dot+'" opacity=".8"/>');
+    else for(i=0;i<12;i++)a.push('<circle cx="'+((i*131)%470)+'" cy="'+(30+((i*71)%26))+'" r="1.8" fill="#ffffff" opacity=".7"/>');
+    g.innerHTML=a.join("")},
+  decor(){
+    var host=el("decor");if(!host)return;
+    var FS={pond:25,greenhouse:23,well:23,lantern:22,bridge:22,birdhouse:21,arch:22,chime:20,
+      weathervane:20,mossstone:20,compost:20,birdbath:20,potbench:20},
+      a=[],own=[],i,o,k,band,idx,st,sig="";
+    for(i=0;i<ORN.length;i++)if(S.orn[ORN[i][0]]){sig+=ORN[i][0]+",";own.push(ORN[i])}
+    if(host.getAttribute("data-sig")===sig)return;
+    host.setAttribute("data-sig",sig);
+    for(k=0;k<own.length;k++){
+      o=own[k];band=k%2;idx=(k-band)/2;
+      st="left:"+(2+idx*13.4+band*6.4).toFixed(1)+"%;bottom:"+(band?40:1)+"px;font-size:"+(FS[o[0]]||20)+"px";
+      a.push('<div class="deco" style="'+st+'">'+
+        (o[0]==="pond"?'🪷<svg viewBox="0 0 40 14" style="width:42px;display:block;margin:-5px auto 0">'+
+          '<ellipse cx="20" cy="8" rx="19" ry="6" fill="#3f6a72"/>'+
+          '<ellipse cx="20" cy="7" rx="16" ry="4.8" fill="#5d92a0"/>'+
+          '<ellipse cx="14" cy="6" rx="5" ry="1.6" fill="rgba(255,255,255,.45)"/></svg>'
+          :o[2])+
+        '<small>'+esc(pick(o[1]))+"</small></div>")}
+    host.innerHTML=a.join("")},
+  creature(id){
+    var host=el("creatures"),v=VISN[id];if(!host||!v)return;
+    var fly={butterfly:1,bee:1,firefly:1,whiteeye:1,owl:1,ladybird:1};
+    var d=document.createElement("div");
+    d.className="cre "+(fly[id]?"fly":"walk");
+    d.style.setProperty("--dur",(fly[id]?12+rnd(7):15+rnd(9))+"s");
+    d.style.top=(34+rnd(56))+"%";
+    d.innerHTML=esc(v[2])+'<span class="tag">'+esc(pick(v[1]))+"</span>";
+    host.appendChild(d);
+    if(window.gsap){try{gsap.fromTo(d,{scale:.4},{scale:1,duration:.5,ease:"back.out(2)"})}catch(e){}}
+    setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d)},25000);
+    while(host.children.length>4)host.removeChild(host.firstChild)},
+  flash(){var f=el("flash");if(!f)return;f.classList.remove("on");void f.offsetWidth;f.classList.add("on")}};
+
+/* ---------- [D] はねる・散る ---------- */
+var Pop={
+  rect(i){var b=document.querySelectorAll("#beds .bed")[i];if(!b)return null;
+    var r=b.getBoundingClientRect();return {x:(r.left+r.width/2)/window.innerWidth,y:(r.top+r.height*.45)/window.innerHeight,el:b}},
+  burst(pos,colors,n,spread,gravity){
+    if(!window.confetti||!pos||(S&&S.calm))return;
+    try{confetti({particleCount:n||26,angle:90,spread:spread||62,startVelocity:26,scalar:.85,ticks:150,
+      gravity:gravity||.55,origin:pos,disableForces:true,flat:true,colors:colors||["#f7c9d8","#f6d26a","#b98ae0"]})}catch(e){}},
+  bounce(i,scale,dur,ease){
+    var r=this.rect(i);if(!r||!r.el)return;
+    var svg=r.el.querySelector("svg.plant")||r.el;
+    if(window.gsap){try{gsap.fromTo(svg,{scale:scale||.4,opacity:.2,transformOrigin:"50% 100%"},
+      {scale:1,opacity:1,duration:dur||.75,ease:ease||"back.out(2.4)"});return}catch(e){}}
+    svg.style.transition="transform .6s cubic-bezier(.2,1.6,.4,1)";svg.style.transform="scale("+(scale||.4)+")";
+    setTimeout(function(){svg.style.transform="scale(1)"},30)},
+  bloom(i){var sp=S.plots[i]&&SP[S.plots[i].sp];
+    this.bounce(i,.5);this.burst(this.rect(i),sp?[sp.c1,sp.c2,"#fff8e0"]:null,30,70,.5)},
+  hybrid(i){var sp=S.plots[i]&&SP[S.plots[i].sp];
+    this.bounce(i,.35,.9,"elastic.out(1,.5)");this.burst(this.rect(i),sp?[sp.c1,sp.c2,"#f6e6a8"]:null,60,110,.42)},
+  milestone(){if(!window.confetti||(S&&S.calm))return;
+    try{confetti({particleCount:70,spread:80,origin:{x:.5,y:.72},colors:["#f6d26a","#8ec98f","#f7c3d6","#ffffff"],scalar:.9,ticks:180})}catch(e){}},
+  water(i){
+    var r=this.rect(i);if(!r||!r.el)return;
+    if(!window.gsap||(S&&S.calm))return;
+    var k,b=r.el,w=r.el.clientWidth||90;
+    for(k=0;k<7;k++){
+      var d=document.createElement("div");
+      d.style.cssText="position:absolute;left:"+(8+Math.random()*(w-16))+"px;top:2px;width:5px;height:8px;border-radius:0 0 99px 99px;background:rgba(150,215,240,.9);z-index:6;pointer-events:none";
+      b.appendChild(d);
+      try{gsap.to(d,{y:(b.clientHeight-14),duration:.5+Math.random()*.35,delay:k*.05,ease:"quad.in",
+        onComplete:function(dd){return function(){if(dd.parentNode)dd.parentNode.removeChild(dd)}}(d)})}catch(e){
+        if(d.parentNode)d.parentNode.removeChild(d)}}}};
+/* ---------- [E] 草花の絵（SVG） ---------- */
+function bloomShape(sp,sc){
+  var g=[],i,a,d="",th,rr,c1=sp.c1,c2=sp.c2;
+  var fs=[[-4,-4,6.4],[4.2,-4.6,6.1],[0,2.6,6.8],[-4.6,3,5.2],[4.6,2.6,5]];
+  if(sp.sh==="round"){for(i=0;i<6;i++){a=i*60;g.push('<ellipse cx="0" cy="-7" rx="6.2" ry="8.8" transform="rotate('+a+')" fill="'+c1+'"/>')}g.push('<circle r="3.6" fill="'+c2+'"/>')}
+  else if(sp.sh==="cup"){g.push('<ellipse cx="-4" cy="-6" rx="4.6" ry="9" transform="rotate(-16 -4 -6)" fill="'+c1+'"/>');
+    g.push('<ellipse cx="4" cy="-6" rx="4.6" ry="9" transform="rotate(16 4 -6)" fill="'+c1+'"/>');
+    g.push('<ellipse cx="0" cy="-7.5" rx="4.8" ry="9.6" fill="'+c1+'"/>')}
+  else if(sp.sh==="sun"){for(i=0;i<13;i++){a=i*27.7;g.push('<ellipse cx="0" cy="-9" rx="2.3" ry="9.6" transform="rotate('+a+')" fill="'+c1+'"/>')}g.push('<circle r="5.8" fill="'+c2+'"/>')}
+  else if(sp.sh==="spire"){for(i=0;i<7;i++){a=i/6;
+      g.push('<ellipse cx="'+(i%2?1.9:-1.9)+'" cy="'+(-3-i*4.1)+'" rx="'+(3.4-a*1.5).toFixed(2)+'" ry="'+(2.9-a*1.1).toFixed(2)+'" fill="'+c1+'"/>')}
+    g.push('<circle cy="-30" r="1.9" fill="'+c2+'"/>')}
+  else if(sp.sh==="ball"){g.push('<circle r="8.6" fill="'+c1+'"/>');
+    for(i=0;i<9;i++){th=i/9*6.283;g.push('<circle cx="'+(Math.cos(th)*5.4).toFixed(1)+'" cy="'+(Math.sin(th)*5.4).toFixed(1)+'" r="2.1" fill="'+c2+'"/>')}}
+  else if(sp.sh==="bell"){g.push('<path d="M0 -2 C-7 1 -6.4 11 0 13.6 C6.4 11 7 1 0 -2 Z" fill="'+c1+'"/>');g.push('<circle cy="13.6" r="1.4" fill="'+c2+'"/>')}
+  else if(sp.sh==="star"){for(i=0;i<12;i++){rr=(i%2)?4.2:11.5;th=i/12*6.283-1.5708;
+      d+=(i?"L":"M")+(Math.cos(th)*rr).toFixed(1)+" "+(Math.sin(th)*rr).toFixed(1)}
+    g.push('<path d="'+d+'Z" fill="'+c1+'"/><circle r="3" fill="'+c2+'"/>')}
+  else if(sp.sh==="frill"){g.push('<circle r="9.4" fill="'+c1+'" opacity=".35"/>');
+    for(i=0;i<fs.length;i++)g.push('<circle cx="'+fs[i][0]+'" cy="'+fs[i][1]+'" r="'+fs[i][2]+'" fill="'+c1+'"/>');
+    g.push('<circle r="2.8" fill="'+c2+'"/>')}
+  else if(sp.sh==="trumpet"){g.push('<ellipse cy="-7" rx="8.4" ry="7.2" fill="'+c1+'"/>');g.push('<ellipse cy="-7" rx="4.4" ry="3.8" fill="'+c2+'"/>')}
+  else if(sp.sh==="plume"){for(i=-3;i<=3;i++)g.push('<path d="M0 2 Q'+(i*2.4)+' -10 '+(i*3.6)+' -21" stroke="'+c1+'" stroke-width="2.1" fill="none" stroke-linecap="round"/>');
+    g.push('<circle cy="-22" r="2.2" fill="'+c2+'"/>')}
+  return '<g transform="scale('+sc.toFixed(3)+')">'+g.join("")+"</g>"}
+function budShape(sp,sc){
+  return '<g transform="scale('+sc.toFixed(2)+')"><path d="M0 2 C-4.6 -3 -4 -10 0 -12.4 C4 -10 4.6 -3 0 2 Z" fill="#6b9a5c"/>'+
+    '<path d="M0 0 C-3.4 -4 -3 -9.4 0 -11.4 C3 -9.4 3.4 -4 0 0 Z" fill="'+sp.c1+'"/></g>'}
+function sproutShape(pr){
+  var l=3+5*pr;
+  return '<g><ellipse cx="-'+(l*.7).toFixed(1)+'" cy="-2" rx="'+l.toFixed(1)+'" ry="'+(l*.4).toFixed(1)+'" fill="#6b9a5c"/>'+
+    '<ellipse cx="'+(l*.7).toFixed(1)+'" cy="-4" rx="'+(l*.9).toFixed(1)+'" ry="'+(l*.36).toFixed(1)+'" fill="#7fae68"/></g>'}
+function plantSVG(p,sp){
+  var g=[],i,n,x,r,ly,ll,topY,inner;
+  if(!p||!sp)return '<svg class="plant" viewBox="0 0 60 96"><ellipse cx="30" cy="88" rx="15" ry="4.2" fill="rgba(0,0,0,.18)"/>'+
+    '<path d="M18 86 q6 -5 12 -1 t12 -2" stroke="rgba(255,255,255,.2)" stroke-width="2" fill="none"/></svg>';
+  var pr=clamp(p.prog,0,1);
+  g.push('<ellipse cx="30" cy="89" rx="'+(9+10*pr).toFixed(1)+'" ry="4" fill="rgba(0,0,0,.2)"/>');
+  if(sp.sh==="carpet"){n=5+Math.round(6*pr);
+    for(i=0;i<n;i++){x=8+(i*44/Math.max(1,n-1))+(i%2?2:0);r=(3.4+3.4*pr)*(1-(i%3)*.14);
+      g.push('<circle cx="'+x.toFixed(1)+'" cy="'+(88-r*.5).toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+(i%2?sp.c1:sp.c2)+'"/>')}
+    return '<svg class="plant" viewBox="0 0 60 96">'+g.join("")+"</svg>"}
+  if(p.dead){
+    g.push('<path d="M30 89 C 36 62 43 44 49 44" stroke="#8a7250" stroke-width="2.1" fill="none"/>');
+    g.push('<circle cx="49" cy="45" r="3.4" fill="#b39a72"/>');
+    g.push('<path d="M30 89 C 26 74 22 66 18 64" stroke="#8a7250" stroke-width="1.6" fill="none" opacity=".8"/>');
+    return '<svg class="plant" viewBox="0 0 60 96">'+g.join("")+"</svg>"}
+  var stemH=sp.h*(.26+.74*pr),topY=89-stemH,dry=(p.water<0.28&&!p.dormant);
+  var col=p.dormant?"#9c8f6d":(dry?"#7f8b52":"#4f7a48");
+  g.push('<path d="M30 89 C 29 '+(89-stemH*.55).toFixed(1)+', 31 '+(topY+stemH*.25).toFixed(1)+', 30 '+topY.toFixed(1)+
+    '" stroke="'+col+'" stroke-width="2.2" fill="none"/>');
+  if(pr>0.16){ly=89-stemH*.42;ll=5+7*pr;
+    g.push('<ellipse cx="'+(30-ll*.8).toFixed(1)+'" cy="'+ly.toFixed(1)+'" rx="'+ll.toFixed(1)+'" ry="'+(ll*.42).toFixed(1)+'" fill="'+(dry?"#7d8a55":"#5c8a52")+'"/>');
+    g.push('<ellipse cx="'+(30+ll*.8).toFixed(1)+'" cy="'+(ly-stemH*.16).toFixed(1)+'" rx="'+(ll*.9).toFixed(1)+'" ry="'+(ll*.38).toFixed(1)+'" fill="'+(dry?"#8b9860":"#6b9a5c")+'"/>')}
+  if(p.dormant){g.push('<ellipse cx="30" cy="86" rx="7.5" ry="2.8" fill="#8f9c78"/>');
+    return '<svg class="plant" viewBox="0 0 60 96">'+g.join("")+"</svg>"}
+  if(pr<0.78)inner=sproutShape(pr);
+  else if(pr<1)inner=budShape(sp,.9);
+  else{inner=bloomShape(sp,1);
+    if(p.seeded)inner+='<circle cx="9" cy="-2" r="2.6" fill="#f6e6a8"/><circle cx="-8" cy="1" r="2" fill="#f6e6a8" opacity=".8"/>';
+    if(p.pruned)inner+='<circle cx="0" cy="4" r="1.6" fill="#8fbf7a"/>'}
+  g.push('<g class="'+(dry?"droop":"sway")+'" transform="translate(30,'+topY.toFixed(1)+')">'+inner+"</g>");
+  return '<svg class="plant" viewBox="0 0 60 96">'+g.join("")+"</svg>"}
+
+/* ---------- [E] 行動 ---------- */
+function ownList(){var a=[],i;for(i=0;i<SPIDS.length;i++)if(S.pouch[SPIDS[i]]>0)a.push(SPIDS[i]);return a}
+function plantAt(i,id){
+  var sp=SP[id];
+  if(!sp||!(S.pouch[id]>0)||!S.bedOpen[i]){Sfx.no();return false}
+  if(sp.sp==="pond"&&!S.orn.pond){toast(t("need_pond"));Sfx.no();return false}
+  S.pouch[id]--;
+  S.plots[i]={sp:id,prog:0,bloomAge:0,water:0.85,seeded:false,dead:false,blooming:false,
+    dormant:!inSeason(sp,seasonOf(S.day)),pruned:false,ext:1};
+  S.soil[i]=clamp((S.soil[i]||0)-0.09,0,1);
+  S.stats.plant++;S.disc[id]=true;log("plant",{sp:id});Sfx.plant();
+  save();renderBeds(true);renderPouch();renderStats();
+  Pop.bounce(i,.35,.7,"back.out(2)");
+  return true}
+function waterTargets(){var a=[],i,p;for(i=0;i<NBED;i++){p=S.plots[i];if(p&&!p.dead&&(p.water||0)<0.95)a.push(i)}return a}
+function waterAt(i){var p=S.plots[i];
+  if(!p||p.dead)return false;
+  if(p.water>0.92){Sfx.no();return false}
+  p.water=1;S.stats.water++;Sfx.water();Pop.water(i);save();renderBeds();renderToday();return true}
+function waterAll(){
+  var lvl=canLevel(),lim=(lvl>=3?2:1);
+  if(S.waterUses>=lim){toast(t("done_watered"));Sfx.no();return}
+  var tg=waterTargets();
+  if(!tg.length){toast(t("done_watered"));Sfx.no();return}
+  if(lvl===1)tg=tg.slice(0,3);
+  var i,k,p;for(k=0;k<tg.length;k++){p=S.plots[tg[k]];if(p){p.water=1;S.stats.water++}}
+  S.waterUses++;Sfx.water();
+  for(i=0;i<Math.min(3,tg.length);i++)Pop.water(tg[i]);
+  save();renderBeds();renderToday();renderTools()}
+function harvestAt(i){
+  var p=S.plots[i],sp,r,seeds,v;
+  if(!p||!p.blooming)return;
+  sp=SP[p.sp];r=p.seeded;seeds=Math.max(1,Math.round(sp.seedn*(r?1:0.4)));
+  if(S.orn.potbench)seeds+=1;
+  S.pouch[sp.id]=(S.pouch[sp.id]||0)+seeds;
+  v=Math.round(sp.val*(r?1:0.45)*(1+Math.min(0.6,S.renown/900))*(1+0.08*S.legacy));
+  addDew(v);S.stats.harvest++;S.renown+=1;S.soil[i]=clamp((S.soil[i]||0)-0.08,0,1);
+  Sfx.harvest();Pop.burst(Pop.rect(i),[sp.c1,sp.c2,"#f6e6a8"],26,80,.5);
+  toast("<b>"+esc(spName(sp.id))+"</b> "+t("got_seeds",{n:seeds})+" / "+t("got_dew",{n:v}),2500);
+  S.plots[i]=null;save();render()}
+function pruneAt(i){
+  var p=S.plots[i];
+  if(!p||!p.blooming||p.pruned){Sfx.no();return}
+  p.pruned=true;p.ext=1.45;S.stats.prune++;S.renown+=2;Sfx.prune();
+  Pop.burst(Pop.rect(i),["#cfe9b4","#ffffff"],12,50,.7);
+  save();renderBeds();renderToday()}
+function clearAt(i){
+  var p=S.plots[i],gain=0;
+  if(!p)return;
+  if(p.dead){gain=S.orn.compost?2:1;S.compost+=gain;log("compost");
+    toast(t("compost_get"),1800)}
+  S.plots[i]=null;S.cloth[i]=false;addDew(1);Sfx.tap();save();render()}
+function compostAt(i){
+  if(S.compost<1){Sfx.no();return}
+  S.compost--;S.soil[i]=clamp((S.soil[i]||0)+0.4,0,1);S.stats.compost++;
+  Sfx.plant();save();renderBeds();renderStats();renderSheetBed(i)}
+function clothAt(i){
+  if(S.clothN<1||S.cloth[i]){Sfx.no();return}
+  S.clothN--;S.cloth[i]=true;Sfx.tap();save();renderBeds();renderStats();renderSheetBed(i)}
+function seedPrice(id){var sp=SP[id],c=Math.round(sp.price*(S.disc[id]?1:1.6));
+  if(S.buffs.shop>0)c=Math.max(1,Math.round(c*0.7));return c}
+function buySeed(id){
+  var c;
+  if(!SP[id]||isHyb(id))return;
+  c=seedPrice(id);
+  if(S.dew<c){Sfx.no();return}
+  S.dew-=c;S.pouch[id]=(S.pouch[id]||0)+1;Sfx.plant();save();render()}
+function buyItem(kind){
+  var c=(kind==="compost")?3:8;
+  if(S.dew<c){Sfx.no();return}
+  S.dew-=c;
+  if(kind==="compost")S.compost++;else S.clothN=(S.clothN||0)+1;
+  Sfx.tap();save();render()}
+function buyOrn(id){
+  var o=ORNM[id],c=o?+o[3]:0;
+  if(!o||S.orn[id])return;
+  if(S.dew<c){Sfx.no();return}
+  S.dew-=c;S.orn[id]=true;S.renown+=6;log("orn",{orn:id});Sfx.mile();save();render()}
+function buyCan(){
+  var lv=canLevel(),c=CANCOST[lv]||0;
+  if(lv>=3){Sfx.no();return}
+  if(S.dew<c){Sfx.no();return}
+  S.dew-=c;S.can=lv+1;log("can");Sfx.open();save();render()}
+function useHG(){
+  if(S.hg<1){Sfx.no();return}
+  S.hg--;catching=true;advance(1);catching=false;S.lastReal=Date.now();
+  Audio2.sfx("open");save();render()}
+function doLegacy(){
+  var st=["dandelion","clover","crocus"],i;
+  if(!confirm(t("legacy_q")))return;
+  S.century++;S.legacy=(S.legacy||0)+1;S.day=0;S.lastReal=Date.now();
+  S.plots=emptyArr();S.dew+=40+20*S.legacy;S.compost+=3;S.clothN=(S.clothN||0)+1;
+  if(S.hg<2)S.hg=2;S.centDone=false;S.soil=nArr(NBED,0.8);S.todaySeen=-1;
+  for(i=0;i<st.length;i++)S.pouch[st[i]]=(S.pouch[st[i]]||0)+2;
+  log("legacy",{c:S.century});Sfx.mile();Pop.milestone();save();render();toast(t("legacy_got"),3200)}
+/* ---- 交配図鑑 ---- */
+function livePairs(){
+  var out=[],i,p,ns,k,j,q,hid;
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||!p.blooming||p.dead)continue;
+    ns=neighbours(i);
+    for(k=0;k<ns.length;k++){j=ns[k];if(j<0||j>=NBED||j<=i)continue;
+      q=S.plots[j];if(!q||!q.blooming||q.dead)continue;
+      hid=HYBKEY[p.sp+"+"+q.sp];if(hid)out.push({a:i,b:j,hid:hid})}}
+  return out}
+function hintLevel(hid){return S.disc[hid]?2:(S.hintLvl[hid]||0)}
+function hintCost(hid){return 14*(hintLevel(hid)+1)}
+function buyHint(hid){
+  var lv=hintLevel(hid),c;
+  if(lv>=2){Sfx.no();return}
+  c=hintCost(hid);
+  if(S.dew<c){Sfx.no();toast(fmt(t("cost_n"),{n:c})+" / "+t("dew")+" "+Math.floor(S.dew));return}
+  S.dew-=c;S.hintLvl[hid]=lv+1;Sfx.mile();save();render()}
+function parentLabel(pid,lvl){
+  if(lvl>=2)return esc(spName(pid));
+  if(lvl===1)return pick(SHAPE[SP[pid].sh]||"?");
+  return t("unknown")}
+function crossGlyph(hid,gray){
+  var st="width:36px;height:40px;display:inline-block;flex:0 0 36px";
+  if(gray)st+=";filter:grayscale(1);opacity:.45";
+  var fake={prog:1,seeded:false,blooming:true,dormant:false,dead:false,water:1};
+  return '<span class="glyph'+(gray?" gray":"")+'">'+plantSVG(fake,SP[hid])+"</span>"}
+function cmpKnown(){
+  var out=[],i,a,f;
+  for(i=0;i<CMPKEYS.length;i++){f=CMPKEYS[i].split("+");
+    if(S.disc[f[0]]&&S.disc[f[1]])out.push(CMPKEYS[i])}
+  return out}
+var CMPKEYS=[];
+function livePairsMap(){var m={},l=livePairs(),i;for(i=0;i<l.length;i++)m[l[i].hid]=l[i];return m}
+
+/* ---------- [E] 描画 ---------- */
+function render(){
+  if(!S)return;
+  Scene.setWeather(S.wx.today);Scene.setSeason(seasonOf(S.day));Scene.sky();Scene.decor();
+  renderHeader();renderStats();renderWx();renderToday();
+  var panels=document.querySelectorAll(".panel"),btns=document.querySelectorAll("#nav button"),i,map,cur;
+  for(i=0;i<panels.length;i++)panels[i].classList.remove("on");
+  for(i=0;i<btns.length;i++){
+    if(btns[i].getAttribute("data-v")===view)btns[i].classList.add("on");else btns[i].classList.remove("on")}
+  if(view==="garden"){el("yardWrap").style.display="block";el("tools").style.display="flex";
+    renderBeds();renderPouch();renderTools();return}
+  el("yardWrap").style.display="none";el("tools").style.display="none";
+  map={seed:"pSeed",book:"pBook",log:"pLog",set:"pSet"};cur=el(map[view]);
+  if(cur){cur.classList.add("on");
+    if(view==="seed")renderSeedPanel(cur);else if(view==="book")renderBookPanel(cur);
+    else if(view==="log")renderLogPanel(cur);else renderSetPanel(cur)}}
+function renderHeader(){
+  var y=yearOf(S.day),s=seasonOf(S.day),bar,c=el("clock");
+  if(c)c.innerHTML="<b>"+seasonName(s)+"</b> ・ "+wxIcon(S.wx.today)+"<br>"+fmt(t("year_n"),{n:y})+
+    '<br><span class="sub">'+fmt(t("day_of"),{s:"",d:dayOfSeason(S.day),D:DPS}).replace(/^\s+/,"")+"</span>";
+  bar=el("centBar").firstElementChild;
+  if(bar)bar.style.width=Math.min(100,S.day/(DPY*CENTURY)*100).toFixed(2)+"%"}
+function renderStats(){
+  var a=[],bl=bloomsNow(),rd=0,th=0,i,p;
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead)continue;
+    if(p.blooming&&p.seeded)rd++;if(p.water<0.28&&!p.dormant)th++}
+  a.push('<span class="chip">'+t("dew")+" <b>"+Math.floor(S.dew)+"</b></span>");
+  a.push('<span class="chip">'+t("renown")+" <b>"+Math.floor(S.renown)+"</b></span>");
+  a.push('<span class="chip">'+t("compost")+" <b>"+S.compost+"</b> ・ "+t("cloth")+" <b>"+(S.clothN||0)+"</b></span>");
+  a.push('<span class="chip">'+fmt(t("century_n"),{n:S.century})+"</span>");
+  a.push('<span class="chip">'+fmt(t("discovered"),{a:discCount(),b:SPIDS.length})+"</span>");
+  if(rd)a.push('<span class="chip hot">✨ '+rd+"</span>");
+  if(th)a.push('<span class="chip cold">💧 '+th+"</span>");
+  if(S.buffs.grow>0)a.push('<span class="chip hot">'+t("buff_grow",{n:Math.round((S.buffs.growM-1)*100)})+" "+S.buffs.grow+"d</span>");
+  if(S.buffs.shop>0)a.push('<span class="chip hot">'+t("buff_shop",{n:S.buffs.shop})+"</span>");
+  el("stats").innerHTML=a.join("")}
+function renderWx(){
+  var box=el("wx"),t0=S.wx.today,t1=S.wx.tomS,w=wxOf(t0),nx,eff;
+  if(!box)return;
+  nx=wxOf(t1);
+  eff=(w.g>1.1?"↑ ":w.g<0.8?"↓ ":"")+Math.round(w.g*100)+"%";
+  box.innerHTML='<div class="big">'+w.ic+'</div><div class="txt"><div class="t1">'+esc(wxName(t0))+
+    ' ・ '+t("wx_today")+'</div><div class="t2">'+t("water_word")+" −"+Math.round(w.ev*100)+"% ・ "+t("grow_word")+" "+eff+
+    (isWet()?" ・ 💧":"")+'</div></div><div class="nx">'+t("wx_tom")+"<br><b style=\"font-size:16px\">"+nx.ic+"</b> "+
+    esc(wxName(t1))+'<br><span style="opacity:.6">'+(S.orn.weathervane?t("wx_accurate"):t("wx_forecast"))+"</span></div>"}
+function renderToday(){
+  var box=el("today");if(!box)return;
+  if(S.todaySeen===todayIdx()){box.hidden=true;box.innerHTML="";return}
+  var i,p,th=0,rd=0,bl=0,live=livePairs(),und=[],lines=[],e,when,k,seen=S.todaySeen;
+  for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead)continue;
+    if(p.water<0.28&&!p.dormant)th++;
+    if(p.blooming&&p.seeded)rd++;
+    if(p.blooming)bl++}
+  for(i=0;i<live.length;i++)if(!S.disc[live[i].hid]&&und.indexOf(live[i].hid)<0)und.push(live[i].hid);
+  if(th)lines.push("💧 "+fmt(t("today_water"),{n:th}));
+  if(rd)lines.push("✨ "+fmt(t("today_ready"),{n:rd}));
+  if(bl)lines.push("🌼 "+fmt(t("today_bloom"),{n:bl}));
+  if(und.length)lines.push("🧬 "+t("today_cross")+"：<b>"+esc(spName(und[0]))+"</b>");
+  var rec=S.chron.slice(-16).reverse(),out=[];
+  for(i=0;i<rec.length&&out.length<4;i++){e=rec[i];
+    if(e.t==="haiku"||e.t==="newy")continue;
+    when=fmt(t("year_n"),{n:e.y})+" "+seasonName(e.s)+" "+e.d;
+    out.push('<li><span style="opacity:.55;font-size:9.6px">'+when+"</span> ・ "+chronText(e)+"</li>")}
+  var first=!S.stats.plant;
+  if(first)lines.unshift("🌰 "+t("start_tip1"),"💧 "+t("start_tip2"),"🌾 "+t("start_tip3"));
+  if(!lines.length&&!out.length)lines.push(t("today_none"));
+  box.innerHTML="<h3 class='serif'>🌤 "+(first?t("start_title"):t("today_title"))+
+    (S.awayDays&&S.awayDays>1?" <span style='font-size:10px;opacity:.7'>("+fmt(t("away_days"),{n:S.awayDays})+")</span>":"")+
+    "</h3>"+(lines.length?"<ul>"+lines.map(function(s){return "<li>"+s+"</li>"}).join("")+"</ul>":"")+
+    (out.length?"<ul style='opacity:.9'>"+out.join("")+"</ul>":"")+
+    '<div class="go"><button class="btn pri" data-today="1">'+t("today_go")+"</button></div>";
+  box.hidden=false}
+function bedSig(i){
+  var p=S.plots[i];
+  if(!S.bedOpen[i])return "L"+i+(S.renown>=PLOTREQ[i]?"R":"");
+  if(!p)return "E"+i+(S.pouch&&ownList().length?"P":"");
+  return [p.sp,stageOf(p),(p.water<0.28?"T":""),(p.seeded?"S":""),(S.cloth[i]?"K":""),
+    (cmpPairs(i).length?"M":""),(S.soil[i]<0.35?"D":"")].join("|")}
+function renderBeds(force){
+  if(view!=="garden")return;
+  var host=el("beds"),i,sig="",a=[],p,sp,cls,bd;
+  if(!host||dragging)return;
+  for(i=0;i<NBED;i++)sig+=bedSig(i)+",";
+  if(!force&&host.getAttribute("data-sig")===sig){updateBars();return}
+  host.setAttribute("data-sig",sig);
+  for(i=0;i<NBED;i++){
+    p=S.plots[i];
+    if(!S.bedOpen[i]){
+      if(S.renown>=PLOTREQ[i]){
+        var c=openCost(i);
+        a.push('<div class="bed" data-open="'+i+'" style="justify-content:center;align-items:center;color:#fff;text-align:center;font-size:10.5px">'+
+          '<div style="font-size:18px">🪓</div><div>'+t("open_it")+'</div><div style="opacity:.85">'+
+          fmt(t("open_cost"),{n:c.dew,c:c.compost})+"</div></div>")}
+      else a.push('<div class="bed lock" data-lk="'+i+'"><span>🔒</span><div>'+fmt(t("locked_by"),{n:PLOTREQ[i]})+"</div></div>");
+      continue}
+    cls="bed";
+    if(flashBeds.indexOf(i)>=0)cls+=" flash";
+    if(!p){a.push('<div class="'+cls+' empty" data-i="'+i+'" style="--w:.25"><div class="plus">＋</div>'+
+      '<div class="bname" style="opacity:.8">'+t("empty_plot")+"</div></div>");continue}
+    sp=SP[p.sp];if(!sp){S.plots[i]=null;continue}
+    if(p.blooming)cls+=" bloomed";
+    if(p.blooming&&p.seeded)cls+=" ready";
+    if(S.cloth[i])cls+=" wet";
+    a.push('<div class="'+cls+'" data-i="'+i+'" style="--w:'+(p.water||0).toFixed(2)+'">');
+    if(!p.dead&&!p.dormant&&p.prog<1)a.push('<div class="bbar"><i style="width:'+Math.round(p.prog*100)+'%"></i></div>'+
+      '<div class="bw"><i style="width:'+Math.round((p.water||0)*100)+'%"></i></div>');
+    a.push(plantSVG(p,sp));
+    a.push('<div class="bname">'+esc(spName(p.sp))+"</div>");
+    bd="";
+    if(!p.dead&&!p.dormant){
+      if(p.water<0.28)bd+="<span>💧</span>";
+      if(p.seeded)bd+="<span>✨</span>";else if(p.blooming)bd+='<span style="opacity:.8">🌼</span>';
+      if(cmpPairs(i).length)bd+='<span style="opacity:.9">🍀</span>'}
+    if(p.dormant)bd+="❄";
+    if(S.cloth[i])bd+='<span style="opacity:.9">🧣</span>';
+    if(bd)a.push('<div class="bbadges">'+bd+"</div>");
+    a.push('<div class="bsoil">'+(S.soil[i]<0.35?"🍂":(S.soil[i]>0.8?"🌱":""))+"</div>");
+    a.push("</div>")}
+  host.innerHTML=a.join("");
+  updateBars();initBedSort()}
+function updateBars(){
+  var beds=document.querySelectorAll("#beds .bed"),i,p,n;
+  for(i=0;i<beds.length&&i<NBED;i++){p=S.plots[i];if(!p)continue;
+    beds[i].style.setProperty("--w",(p.water||0).toFixed(2));
+    n=beds[i].querySelector(".bbar i");if(n)n.style.width=Math.round(p.prog*100)+"%";
+    n=beds[i].querySelector(".bw i");if(n)n.style.width=Math.round((p.water||0)*100)+"%"}
+  var th=0,rd=0;for(i=0;i<NBED;i++){p=S.plots[i];if(!p||p.dead)continue;
+    if(p.water<0.28&&!p.dormant)th++;if(p.blooming&&p.seeded)rd++}
+  renderTools(th,rd)}
+function renderPouch(){
+  var list=el("pouchList"),tt=el("pouchTitle"),hh=el("pouchHint"),own=ownList(),a=[],i,id,sp;
+  if(!list)return;
+  if(tt)tt.textContent=t("pouch");
+  if(hh)hh.textContent=t("drag_hint");
+  if(!own.length){list.innerHTML='<div class="empty">'+t("no_seed")+"</div>";return}
+  for(i=0;i<own.length;i++){id=own[i];sp=SP[id];
+    a.push('<div class="seed'+(selSeed===id?" sel":"")+'" data-seed="'+id+'" data-id="'+id+'">'+
+      '<span class="sc">'+S.pouch[id]+"</span>"+
+      plantSVG({prog:1,seeded:false,blooming:true,dormant:false,dead:false,water:1},sp)+
+      '<span class="sn">'+esc(spName(id))+"</span></div>")}
+  list.innerHTML=a.join("");initPouchSort()}
+function renderTools(th,rd){
+  var box=el("tools"),lvl=canLevel(),lim=(lvl>=3?2:1),used=S.waterUses||0;
+  if(th===undefined||rd===undefined){th=0;rd=0;for(var i=0;i<NBED;i++){var p=S.plots[i];if(!p||p.dead)continue;
+    if(p.water<0.28&&!p.dormant)th++;if(p.blooming&&p.seeded)rd++}}
+  var wa=(used>=lim)?t("water_done"):(th?fmt(t("water_some"),{n:th}):t("water_all"));
+  box.innerHTML=
+    '<button class="tbtn pri'+(used>=lim?" dis":"")+'" data-t="water">💧<span> '+wa+"</span><small>"+
+      (used>=lim?t("water_done"):fmt(t("can_n"),{n:lvl}))+"</small></button>"+
+    '<button class="tbtn'+(S.hg<1?" dis":"")+'" data-t="hg">⏳<span> '+t("hg_use")+"</span><small>"+
+      (S.hg>=HGCAP?t("hg_none"):fmtDur(hgTimeLeft()))+" ・ "+S.hg+"</small></button>"+
+    '<button class="tbtn" data-t="zen">🌄<span> '+t("zen")+"</span><small>&nbsp;</small></button>"}
+function stageLabel(p){return t("stage_"+stageOf(p))}
+function seasLabel(sp){
+  var m={w:3,s:0,m:1,a:2},out=[],i,k;
+  if(sp.seas.indexOf("*")>=0)return t("all_seasons");
+  for(i=0;i<sp.seas.length;i++){k=m[sp.seas.charAt(i)];if(k!==undefined)out.push(seasonName(k))}
+  return out.join("・")}
+function swatch(sp,dim){return '<span class="sws"'+(dim?' style="filter:grayscale(1);opacity:.42"':"")+'>'+
+  '<span class="sw" style="background:'+sp.c1+'"></span><span class="sw" style="background:'+sp.c2+'"></span></span>'}
+function meter(label,v,color){
+  return '<div class="meter"><span style="flex:0 0 42px">'+label+'</span><span class="mbar"><i style="width:'+
+    Math.round(clamp(v,0,1)*100)+"%;background:"+color+'"></i></span><span style="opacity:.7">'+Math.round(v*100)+"%</span></div>"}
+/* ---- 種の市 ---- */
+function renderSeedPanel(elx){
+  var a=[],own=ownList(),i,id,sp,c,known,o,mult=S.buffs.shop>0?0.7:1;
+  a.push('<div class="card"><h2 class="t">'+t("pouch")+"</h2>");
+  if(!own.length)a.push('<div class="small">'+t("no_seed")+"</div>");
+  for(i=0;i<own.length;i++){id=own[i];sp=SP[id];
+    a.push('<div class="row" data-seed="'+id+'" style="cursor:pointer">'+swatch(sp)+'<span class="sp"><span class="nm">'+esc(spName(id))+"</span>");
+    a.push('<div class="sub">'+esc(pick(sp.note))+" ・ "+fmt(t("own_n"),{n:S.pouch[id]})+" ・ "+seasLabel(sp)+"</div></span>"+
+      '<span class="chip">'+t("plant_here")+"</span></div>")}
+  a.push("</div>");
+  a.push('<div class="card"><h2 class="t">'+t("shop_title")+'</h2><div class="small">'+t("dew")+": <b>"+Math.floor(S.dew)+
+    "</b> ・ "+t("shop_hint")+(S.buffs.shop>0?' <span class="chip hot">'+t("buff_shop",{n:S.buffs.shop})+"</span>":"")+"</div>");
+  for(i=0;i<SPIDS.length;i++){id=SPIDS[i];sp=SP[id];
+    if(isHyb(id))continue;
+    if((sp.rar-1)*12>S.renown)continue;
+    known=!!S.disc[id];c=seedPrice(id);
+    a.push('<div class="row">'+swatch(sp,!known)+'<span class="sp"><span class="nm">'+(known?esc(spName(id)):t("mystery"))+"</span>");
+    a.push('<div class="sub">'+(known?esc(pick(sp.note)):t("hint_mystery"))+" ・ "+seasLabel(sp)+" ・ "+fmt(t("cost_n"),{n:c})+
+      (mult<1?" <s style='opacity:.5'>"+sp.price+"</s>":"")+"</div></span>");
+    a.push(S.dew<c?'<button class="btn dis">'+t("buy")+"</button>":'<button class="btn" data-buy="'+id+'">'+t("buy")+"</button>");
+    a.push("</div>")}
+  a.push("</div>");
+  a.push('<div class="card"><h2 class="t">🧰 '+t("tool_title")+"</h2>");
+  a.push('<div class="row"><span class="sws"><span class="sw" style="background:#57a6c4"></span></span><span class="sp"><span class="nm">'+
+    fmt(t("can_n"),{n:canLevel()})+'</span><div class="sub">'+t("can_tip"+Math.min(3,canLevel()+1))+"</div></span>"+
+    (canLevel()>=3?'<span class="chip">'+t("can_max")+"</span>":
+      (S.dew<CANCOST[canLevel()]?'<button class="btn dis">'+t("buy")+"</button>":'<button class="btn gold" data-can="1">'+t("can_buy",{c:CANCOST[canLevel()]})+"</button>"))+"</div>");
+  a.push('<div class="row"><span class="sws"><span class="sw" style="background:#8a6540"></span></span><span class="sp"><span class="nm">'+
+    t("compost")+' <b>'+S.compost+'</b></span><div class="sub">'+t("compost_tip")+" ・ "+fmt(t("cost_n"),{n:3})+"</div></span>"+
+    (S.dew<3?'<button class="btn dis">'+t("buy")+"</button>":'<button class="btn" data-item="compost">'+t("buy")+"</button>")+"</div>");
+  a.push('<div class="row"><span class="sws"><span class="sw" style="background:#a9c4ee"></span></span><span class="sp"><span class="nm">'+
+    t("cloth")+' <b>'+(S.clothN||0)+'</b></span><div class="sub">'+t("cloth_tip")+" ・ "+fmt(t("cost_n"),{n:8})+"</div></span>"+
+    (S.dew<8?'<button class="btn dis">'+t("buy")+"</button>":'<button class="btn" data-item="cloth">'+t("buy")+"</button>")+"</div>");
+  a.push("</div>");
+  a.push('<div class="card"><h2 class="t">'+t("tab_orn")+'</h2><div class="small">'+fmt(t("owned_n"),{n:Object.keys(S.orn).length})+"</div>");
+  for(i=0;i<ORN.length;i++){o=ORN[i];
+    a.push('<div class="row"><span style="font-size:19px">'+o[2]+'</span><span class="sp"><span class="nm">'+pick(o[1])+"</span>");
+    a.push('<div class="sub">'+esc(pick(o[4]))+" ・ "+fmt(t("cost_n"),{n:+o[3]})+"</div></span>");
+    if(S.orn[o[0]])a.push('<span class="chip">'+t("owned")+"</span>");
+    else if(S.dew<+o[3])a.push('<button class="btn dis">'+t("buy")+"</button>");
+    else a.push('<button class="btn" data-orn="'+o[0]+'">'+t("buy")+"</button>");
+    a.push("</div>")}
+  a.push("</div>");
+  elx.innerHTML=a.join("")}
+/* ---- 図鑑 ---- */
+function renderBookPanel(elx){
+  var tabs=[["species",t("tab_species")],["cross",t("tab_cross")],["cmp",t("cmp_title")],["vis",t("tab_vis")]];
+  var a=['<div class="subtabs">'],i,id,sp,k,n,v;
+  for(i=0;i<tabs.length;i++)a.push('<button class="subtab'+(bookTab===tabs[i][0]?" on":"")+'" data-btab="'+tabs[i][0]+'">'+tabs[i][1]+"</button>");
+  a.push("</div>");
+  if(bookTab==="species"){
+    a.push('<div class="card"><h2 class="t">'+t("tab_species")+'</h2><div class="small">'+fmt(t("discovered"),{a:discCount(),b:SPIDS.length})+"</div>");
+    for(i=0;i<SPIDS.length;i++){id=SPIDS[i];sp=SP[id];k=S.bloomed[id]||0;
+      a.push('<div class="row"'+(S.disc[id]?' data-sp="'+id+'" style="cursor:pointer"':"")+">"+swatch(sp,!S.disc[id])+'<span class="sp"><span class="nm">');
+      if(S.disc[id]){a.push(esc(spName(id)));if(isHyb(id))a.push(' <span class="chip">'+t("hybrid_tag")+"</span>")}
+      else a.push(t("unknown"));
+      a.push('</span><div class="sub">');
+      if(S.disc[id])a.push(esc(pick(sp.note))+" ・ "+seasLabel(sp)+" ・ "+fmt(t("bloomed_n"),{n:k}));
+      else if(isHyb(id))a.push(t("unknown_hyb"));else a.push(t("unknown_wild"));
+      a.push("</div></span></div>")}
+    a.push("</div>")}
+  else if(bookTab==="cross")a.push(renderCrossSection());
+  else if(bookTab==="cmp"){
+    var kn=cmpKnown();
+    a.push('<div class="card"><h2 class="t">'+t("cmp_title")+'</h2><div class="small">'+t("cmp_note")+"</div>");
+    if(!kn.length)a.push('<div class="small">'+t("cmp_none")+"</div>");
+    for(i=0;i<kn.length;i++){var f=kn[i].split("+"),w=CMP[kn[i]];
+      a.push('<div class="row">'+swatch(SP[f[0]])+swatch(SP[f[1]])+'<span class="sp"><span class="nm">'+esc(spName(f[0]))+" × "+esc(spName(f[1]))+
+        '</span><div class="sub">'+(w>0?"+":"")+w+"% </div></span>"+(w>0?'<span class="chip">🍀</span>':'<span class="chip">⚠️</span>')+"</div>")}
+    a.push("</div>")}
+  else{a.push('<div class="card"><h2 class="t">'+t("tab_vis")+"</h2>");
+    for(i=0;i<VIS.length;i++){v=VIS[i];n=S.visited[v[0]]||0;
+      a.push('<div class="row"><span style="font-size:19px;'+(n?"":"filter:grayscale(1);opacity:.4")+'">'+v[2]+"</span>");
+      a.push('<span class="sp"><span class="nm">'+(n?esc(pick(v[1])):t("unknown"))+'</span><div class="sub">');
+      a.push(esc(pick(v[4]))+(n?" ・ "+fmt(t("vis_n"),{n:n}):""));
+      a.push("</div></span></div>")}
+    a.push("</div>")}
+  elx.innerHTML=a.join("")}
+function renderCrossSection(){
+  var a=[],i,hid,lv,ch,tn,live=livePairsMap(),lp=livePairs();
+  a.push('<div class="card"><h2 class="t">'+pick("交配表|Cross Almanac|杂交图鉴")+"</h2>");
+  a.push('<div class="small">'+t("cross_note")+"</div>");
+  a.push('<div class="small">'+fmt(t("cross_found"),{a:hybCount(),b:HYB.length})+
+    (S.orn.bridge?" ・ <b>"+t("bridge_tag")+"</b>":"")+"</div></div>");
+  a.push('<div class="card">');
+  for(i=0;i<HYB.length;i++){
+    hid=HYB[i][0];lv=hintLevel(hid);ch=Math.round(crossChance(hid)*100);tn=S.hybTry[hid]||0;
+    a.push('<div class="xbox"><div class="xq">'+crossGlyph(hid,!S.disc[hid]));
+    a.push("<span><b>"+(S.disc[hid]?esc(spName(hid)):t("unknown"))+"</b></span>");
+    if(live[hid])a.push('<span class="chip hot">'+t("cross_now")+"</span>");
+    if(S.disc[hid])a.push('<span class="chip">'+t("cross_discovered")+"</span>");
+    a.push('</div><div class="sub">'+parentLabel(HYB[i][1],lv)+" × "+parentLabel(HYB[i][2],lv));
+    a.push(" ・ "+fmt(t("cross_chance"),{n:ch}));
+    if(tn)a.push(" ・ "+fmt(t("cross_try"),{n:tn}));
+    if(S.disc[hid])a.push(" ・ "+fmt(t("cross_seeds"),{n:S.pouch[hid]||0}));
+    a.push("</div>");
+    if(live[hid])a.push('<div class="hintline"><button class="btn gold" data-gopair="'+live[hid].a+":"+live[hid].b+'">'+t("cross_go")+"</button></div>");
+    if(lv<2)a.push('<div class="hintline"><button class="btn'+(S.dew<hintCost(hid)?" dis":"")+'" data-hint="'+hid+'">'+
+      fmt(t("hint_buy"),{c:hintCost(hid)})+" ・ "+(lv===0?t("hint_shape"):t("hint_name"))+"</button></div>");
+    else if(!S.disc[hid])a.push('<div class="hintline"><span class="chip">'+t("hint_revealed")+"</span></div>");
+    a.push("</div>")}
+  a.push("</div>");
+  return a.join("")}
+/* ---- 年表・勲章 ---- */
+var logFilter="all";
+function centuryPoem(){
+  var best=null,bn=0,k,out=[],i,vals={},kk,wk=0,wkk=null;
+  for(k in S.visited)if(S.visited.hasOwnProperty(k)&&S.visited[k]>bn){bn=S.visited[k];best=k}
+  for(k in S.wxHist)if(S.wxHist.hasOwnProperty(k)&&S.wxHist[k]>wk){wk=S.wxHist[k];wkk=k}
+  vals.p=S.stats.plant;vals.b=S.stats.bloom;vals.w=S.stats.water;vals.h=S.stats.harvest;
+  vals.d=discCount();vals.v=Object.keys(S.visited).length;vals.vis=best?pick(VISN[best][1]):"—";
+  vals.wx=wkk?wxName(wkk):"—";
+  for(i=0;i<CP.length;i++)out.push(pick(CP[i]));
+  return fmt(out.join("\n"),vals)}
+function sparkSVG(){
+  var years=[],y,i,v,mx=1;
+  var now=yearOf(S.day);
+  for(i=Math.max(1,now-11);i<=now;i++){v=(S.bloomY&&S.bloomY[i])||0;years.push({y:i,v:v});if(v>mx)mx=v}
+  if(years.length<2)return "";
+  var w=300,h=46,sw=w/years.length,d="",px,py;
+  for(i=0;i<years.length;i++){px=(i*sw+sw/2).toFixed(1);py=(h-3-(years[i].v/mx)*(h-8)).toFixed(1);
+    d+=(i?"L":"M")+px+" "+py+" "}
+  return '<svg class="spark" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'+
+    '<rect x="0" y="'+(h-1)+'" width="'+w+'" height="1" fill="rgba(0,0,0,.12)"/>'+
+    '<path d="'+d+'" stroke="#4d7c53" stroke-width="2" fill="none" stroke-linejoin="round"/>'+
+    "</svg>"}
+function renderLogPanel(elx){
+  var a=[],i,m,done,list,e,when,f=["all","bloom","hybrid","visitor","event","wx"];
+  a.push('<div class="card"><h2 class="t">'+t("ms_title")+'</h2><div class="small">'+fmt(t("ms_earned"),
+    {a:Object.keys(S.ms).length,b:MILE.length})+"</div><div class=\"pbar2\"><i style=\"width:"+
+    (Object.keys(S.ms).length/MILE.length*100).toFixed(1)+'%"></i></div>');
+  for(i=0;i<MILE.length;i++){m=MILE[i];done=!!S.ms[m[0]];
+    a.push('<div class="row"><span style="font-size:15px;width:18px;text-align:center">'+(done?"🏅":"○")+"</span>");
+    a.push('<span class="sp"><span class="nm"'+(done?"":' style="opacity:.62"')+">"+esc(pick(m[1]))+"</span>");
+    a.push('<div class="sub">'+fmt(t("reward"),{n:m[3]})+"</div></span></div>")}
+  a.push("</div>");
+  if(S.centDone){a.push('<div class="card"><h2 class="t serif">'+t("century_t")+'</h2><div class="poem">'+centuryPoem()+
+    '</div><div class="hr"></div><button class="btn pri" id="legacyBtn">'+t("legacy_btn")+"</button>"+
+    '<div class="small" style="margin-top:6px">'+t("legacy_note")+"</div></div>")}
+  a.push('<div class="card"><h2 class="t serif">'+t("nav_log")+"</h2>");
+  var LFL={all:"すべて|All|全部",bloom:"開花|Blooms|开花",hybrid:"交配|Cross|杂交",visitor:"来客|Guests|访客",event:"できごと|Events|记事",wx:"空|Sky|天空"};
+  a.push('<div class="subtabs">'+f.map(function(x){return '<button class="subtab'+(logFilter===x?" on":"")+'" data-lf="'+x+'">'+
+    pick(LFL[x]||x)+"</button>"}).join("")+"</div>");
+  list=[];for(i=S.chron.length-1;i>=0&&list.length<110;i--){e=S.chron[i];
+    if(logFilter!=="all"&&e.t!==logFilter&&(logFilter!=="bloom"||e.t!=="bloom1"))continue;list.push(e)}
+  if(!list.length)a.push('<div class="small">'+t("away_none")+"</div>");
+  for(i=0;i<list.length;i++){e=list[i];
+    when=(e.c>1?"C"+e.c+" ":"")+fmt(t("year_n"),{n:e.y})+" "+seasonName(e.s)+" "+e.d;
+    a.push('<div class="logrow"><span class="when">'+when+"</span><span>"+chronText(e)+"</span></div>")}
+  a.push("</div>");
+  elx.innerHTML=a.join("");
+  var lb=el("legacyBtn");if(lb)lb.onclick=doLegacy}
+/* ---- 設定 ---- */
+function libList(){
+  var L=["PixiJS（粒子と天候）","GSAP（はねる演出）","Tone.js（環境音と奏でる音）","SortableJS（ドラッグで植える）",
+    "canvas-confetti（咲いた拍手）","localForage（IndexedDB 保存）","Google Fonts（Shippori Mincho / Zen Kaku Gothic）"],a=[],i;
+  for(i=0;i<L.length;i++)a.push('<div class="small">・ '+esc(L[i])+"</div>");
+  return a.join("")}
+function renderSetPanel(elx){
+  var names=LNAME,a=[],i,lgs;
+  a.push('<div class="card"><h2 class="t">'+t("set_lang")+'</h2><div class="grid2" style="margin-top:6px">');
+  for(i=0;i<LANGS.length;i++)a.push('<button class="btn'+(lang===LANGS[i]?" pri":"")+'" data-lang="'+LANGS[i]+'">'+names[i]+"</button>");
+  a.push("</div></div>");
+  a.push('<div class="card"><h2 class="t">'+t("set_speed")+'</h2><div class="grid2" style="margin-top:6px">');
+  for(i=0;i<SPEEDS.length;i++)a.push('<button class="btn'+(S.speed===i?" pri":"")+'" data-sp="'+i+'">'+t(SPEEDS[i].k)+"</button>");
+  a.push('</div><div class="small" style="margin-top:6px">'+t("time_note")+"</div></div>");
+  a.push('<div class="card"><h2 class="t">'+t("set_sound")+'</h2><div class="grid2" style="margin-top:6px">');
+  a.push('<button class="btn'+(S.sound?" pri":"")+'" id="sndOn">'+t("on_l")+"</button>");
+  a.push('<button class="btn'+(!S.sound?" pri":"")+'" id="sndOff">'+t("off_l")+"</button></div>");
+  a.push('<div style="margin-top:10px" class="small">'+t("set_vol")+" "+Math.round(S.vol*100)+"%</div>");
+  a.push('<input type="range" id="volR" min="0" max="100" value="'+Math.round(S.vol*100)+'"></div>');
+  a.push('<div class="card"><h2 class="t">'+t("set_motion")+" ・ "+t("set_font")+"</h2>");
+  a.push('<div class="grid2" style="margin-top:4px"><button class="btn'+(S.calm?" pri":"")+'" id="calmBtn">'+t("on_l")+"/"+t("off_l")+
+    "</button><span class='small' style='align-self:center'>"+(S.calm?"✓ "+t("on_l"):"✓ "+t("off_l"))+"</span></div>");
+  a.push('<div class="grid3" style="margin-top:8px">');
+  for(i=0;i<3;i++)a.push('<button class="btn'+(S.fs===[0.92,1,1.14][i]?" pri":"")+'" data-fs="'+[0.92,1,1.14][i]+'">'+
+    ["A−","A","A+"][i]+"</button>");
+  a.push("</div></div>");
+  a.push('<div class="card"><h2 class="t">'+t("set_data")+'</h2><div class="small">'+t("save_note")+
+    (IDB?" ・ IndexedDB":"")+'</div><div class="grid2" style="margin-top:8px">');
+  a.push('<button class="btn" id="expBtn">'+t("exp_t")+'</button><button class="btn" id="impBtn">'+t("imp_t")+"</button>");
+  a.push('</div><textarea id="ioBox" spellcheck="false"></textarea></div>');
+  a.push('<div class="card"><h2 class="t serif">about</h2><div class="small">'+t("time_note")+'</div>');
+  a.push('<div class="small">'+t("tip1")+'</div><div class="small">'+t("tip2")+'</div><div class="small">'+t("tip3")+
+    '</div><div class="small">'+t("tip4")+'</div><div class="small">'+t("tip5")+'</div><div class="hr"></div>');
+  a.push('<div class="small" style="opacity:.6"><b>'+t("libs_note")+"</b></div>"+libList());
+  a.push('<div class="hr"></div><button class="btn" id="resetBtn" style="color:#a33">'+t("reset_t")+"</button></div>");
+  a.push('<div class="card"><h2 class="t serif">stats</h2><div class="small">'+fmt(pick(U.stats_line),
+    {p:S.stats.plant,h:S.stats.harvest,w:S.stats.water,d:discCount(),f:S.stats.found})+"</div>");
+  a.push(sparkSVG());
+  a.push('<div class="small">'+t("compost")+": "+S.compost+" ・ "+t("cloth")+": "+(S.clothN||0)+" ・ "+
+    t("can_n",{n:canLevel()})+"</div></div>");
+  elx.innerHTML=a.join("");
+  lgs=elx.querySelectorAll("[data-lang]");
+  for(i=0;i<lgs.length;i++)lgs[i].onclick=function(){setLang(this.getAttribute("data-lang"))};
+  var sps=elx.querySelectorAll("[data-sp]");
+  for(i=0;i<sps.length;i++)sps[i].onclick=function(){S.speed=+this.getAttribute("data-sp");S.lastReal=Date.now();save();render()};
+  var fsb=elx.querySelectorAll("[data-fs]");
+  for(i=0;i<fsb.length;i++)fsb[i].onclick=function(){S.fs=+this.getAttribute("data-fs");applyPrefs();save();render()};
+  el("sndOn").onclick=function(){Audio2.init();Audio2.setOn(true);render()};
+  el("sndOff").onclick=function(){Audio2.setOn(false);render()};
+  el("volR").oninput=function(ev){Audio2.setVol((+ev.target.value)/100)};
+  el("calmBtn").onclick=function(){S.calm=!S.calm;applyPrefs();Scene.seed(true);save();render()};
+  el("expBtn").onclick=doExport;
+  el("impBtn").onclick=doImport;
+  el("resetBtn").onclick=function(){if(confirm(t("reset_q"))){try{localStorage.removeItem(LS);if(IDB)IDB.clear()}catch(e){}location.reload()}}}
+function applyPrefs(){
+  document.body.classList.toggle("calm",!!S.calm);
+  document.documentElement.style.setProperty("--fs",S.fs||1)}
+/* ---- シート ---- */
+function openSheet(h){el("sheetBody").innerHTML=h;el("sheet").classList.add("on");el("back").classList.add("on")}
+function closeSheet(){el("sheet").classList.remove("on");el("back").classList.remove("on")}
+function sheetPlantPick(i){
+  var own=ownList(),a=[],j,id,sp,blocked;
+  a.push('<h2 class="t">'+t("plant_here")+"</h2>");
+  if(!own.length)a.push('<div class="small">'+t("no_seed")+"</div>");
+  for(j=0;j<own.length;j++){id=own[j];sp=SP[id];blocked=(sp.sp==="pond"&&!S.orn.pond);
+    a.push('<div class="row"'+(blocked?' style="opacity:.5"':"")+' data-plant="'+id+'" data-slot="'+i+'">');
+    a.push('<span style="width:44px;flex:0 0 44px;display:inline-block">'+
+      plantSVG({prog:1,seeded:false,blooming:true,dormant:false,dead:false,water:1},sp)+"</span>");
+    a.push('<span class="sp"><span class="nm">'+esc(spName(id))+'</span><div class="sub">');
+    if(blocked)a.push(t("need_pond"));
+    else a.push(seasLabel(sp)+" ・ "+fmt(t("own_n"),{n:S.pouch[id]})+" ・ "+fmt(t("to_bloom"),{n:sp.germ}));
+    a.push("</div></span>");
+    if(!blocked)a.push('<span class="chip">'+t("plant_here")+"</span>");
+    a.push("</div>")}
+  a.push('<div class="hr"></div><button class="btn" data-close="1">'+t("close")+"</button>");
+  openSheet(a.join(""))}
+function renderSheetBed(i){closeSheet();bedSheet(i)}
+function bedSheet(i){
+  var p=S.plots[i],sp,a=[],dl,ps,k,cmp=[];
+  if(!S.bedOpen[i])return;
+  if(!p){sheetPlantPick(i);return}
+  sp=SP[p.sp];dl=p.prog<1?Math.max(1,Math.ceil((1-p.prog)*sp.germ/Math.max(.25,wxOf(S.wx.today).g))):0;
+  ps=cmpPairs(i);
+  for(k=0;k<ps.length;k++)cmp.push(esc(spName(ps[k].other))+" "+(ps[k].w>0?"+":"")+ps[k].w+"%");
+  a.push('<div class="detailTop"><span>'+plantSVG(p,sp)+"</span><span><div class='big'>"+esc(spName(p.sp))+"</div>");
+  a.push('<div class="small">'+stageLabel(p)+" ・ "+seasLabel(sp)+(isHyb(p.sp)?" ・ "+t("hybrid_tag"):"")+
+    (p.pruned?" ・ "+t("pruned"):"")+"</div>");
+  a.push('<div class="small" style="margin-top:4px">'+esc(pick(sp.note))+"</div></span></div><div class='hr'></div>");
+  a.push(meter("💧 "+t("water_word"),p.water||0,"linear-gradient(90deg,#63b6d8,#a9dff0)"));
+  a.push(meter("🍂 "+t("soil_word"),S.soil[i]||0,"linear-gradient(90deg,#b98a52,#8a6540)"));
+  a.push('<div class="row"><span class="chip">'+(S.soil[i]<0.35?"⚠️":"✔")+'</span><span class="sp"><div class="sub">'+
+    (S.soil[i]<0.35?t("soil_bad"):t("soil_good"))+(S.cloth[i]?" ・ 🧣 "+t("cloth"):"")+"</div></span></div>");
+  if(dl)a.push('<div class="row"><span class="chip">🌱</span><span class="sp"><div class="sub">'+fmt(t("to_bloom"),{n:dl})+"</div></span></div>");
+  else if(p.seeded)a.push('<div class="row"><span class="chip">✨</span><span class="sp"><div class="sub">'+t("seed_ready")+"</div></span></div>");
+  if(cmp.length)a.push('<div class="row"><span class="chip">🍀</span><span class="sp"><div class="sub">'+
+    fmt(t("companion_tag"),{n:cmp.length})+" ："+cmp.join(" / ")+"</div></span></div>");
+  a.push('<div class="grid2" style="margin-top:10px">');
+  a.push('<button class="btn pri" data-act="water" data-slot="'+i+'">💧 '+t("water")+"</button>");
+  if(p.blooming)a.push('<button class="btn pri" data-act="harvest" data-slot="'+i+'">🌾 '+t("harvest")+"</button>");
+  else a.push('<button class="btn dis">🌾 '+t("harvest")+"</button>");
+  if(p.blooming&&!p.pruned)a.push('<button class="btn" data-act="prune" data-slot="'+i+'">✂️ '+t("prune")+"</button>");
+  else a.push('<button class="btn dis">✂️ '+t("prune")+"</button>");
+  a.push('<button class="btn'+(S.compost<1?" dis":"")+'" data-act="compost" data-slot="'+i+'">🍂 '+t("compost_use")+"</button>");
+  a.push('<button class="btn'+((S.clothN||0)<1||S.cloth[i]?" dis":"")+'" data-act="cloth" data-slot="'+i+'">🧣 '+t("cloth_use")+"</button>");
+  a.push('<button class="btn" data-act="clear" data-slot="'+i+'">'+t("clear")+"</button>");
+  a.push('</div><div style="margin-top:8px"><button class="btn" data-close="1">'+t("close")+"</button></div>");
+  openSheet(a.join(""))}
+function showAway(){
+  var list=S.chron.slice(-16).reverse(),a=['<h2 class="t serif">'+t("away_title")+"</h2>"],i,e,when;
+  if(!list.length)a.push('<div class="small">'+t("away_none")+"</div>");
+  for(i=0;i<list.length;i++){e=list[i];
+    when=fmt(t("year_n"),{n:e.y})+" "+seasonName(e.s)+" "+e.d;
+    a.push('<div class="logrow"><span class="when">'+when+"</span><span>"+chronText(e)+"</span></div>")}
+  a.push('<div style="margin-top:8px"><button class="btn pri" data-close="1">'+t("close")+"</button></div>");
+  openSheet(a.join(""))}
+/* ---- エクスポート ---- */
+function doExport(){var s;
+  try{s=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+    el("ioBox").value=s;
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(s).then(function(){toast(t("copied"))},function(){toast(t("copied"))});
+    else toast(t("copied"))}
+  catch(e){toast(t("import_fail"))}}
+function doImport(){var v,o;
+  v=el("ioBox").value.trim();
+  if(!v){Sfx.no();return}
+  try{o=JSON.parse(decodeURIComponent(escape(atob(v))));
+    if(!o||!Array.isArray(o.plots))throw new Error("bad");
+    S=normState(o);lang=S.lang||lang;view="garden";applyPrefs();save();render();toast(t("imported"))}
+  catch(e){toast(t("import_fail"));Sfx.no()}}
+/* ---------- [F] 起動と配線 ---------- */
+var selSeed=null,sortBed=[],sortPouch=null;
+function uiSoundBtn(){var b=el("sndBtn");if(b)b.textContent=S.sound?"🔔":"🔕"}
+function buildNav(){
+  var items=[["garden","🌿",t("nav_garden")],["seed","🌰",t("nav_seed")],
+    ["book","📖",t("nav_book")],["log","🗒",t("nav_log")],["set","⚙️",t("nav_set")]];
+  var a=[],i,bs,n=0;
+  if(S.awayDays>1)n=1;
+  for(i=0;i<items.length;i++)a.push('<button data-v="'+items[i][0]+'"><span class="ic">'+items[i][1]+"</span><span>"+items[i][2]+"</span>"+
+    (items[i][0]==="log"&&n?'<span class="dot"></span>':"")+"</button>");
+  el("nav").innerHTML=a.join("");
+  bs=document.querySelectorAll("#nav button");
+  for(i=0;i<bs.length;i++)bs[i].onclick=function(){Sfx.tap();view=this.getAttribute("data-v");closeSheet();render()}}
+function destroySort(){
+  var i;for(i=0;i<sortBed.length;i++){try{sortBed[i].destroy()}catch(e){}}
+  sortBed=[];if(sortPouch){try{sortPouch.destroy()}catch(e){}sortPouch=null}}
+function initPouchSort(){
+  if(!window.Sortable)return;
+  var host=el("pouchList");if(!host)return;
+  if(sortPouch){try{sortPouch.destroy()}catch(e){}}
+  try{sortPouch=new Sortable(host,{group:{name:"seed",pull:"clone",put:false},sort:false,animation:150,
+    ghostClass:"sortable-ghost",onStart:function(){dragging=true},
+    onEnd:function(){dragging=false;setTimeout(function(){renderBeds(true)},40)}})}catch(e){}}
+function initBedSort(){
+  if(!window.Sortable)return;
+  destroySort();
+  var beds=document.querySelectorAll("#beds .bed[data-i]"),i;
+  for(i=0;i<beds.length;i++)(function(node){
+    try{sortBed.push(new Sortable(node,{group:{name:"seed",pull:false,put:true},sort:false,
+      onAdd:function(ev){
+        var id=ev.item.getAttribute("data-id");
+        if(ev.item.parentNode)ev.item.parentNode.removeChild(ev.item);
+        var idx=+node.getAttribute("data-i");
+        dragging=false;
+        if(id&&plantAt(idx,id)){closeSheet()}
+      }}))}catch(e){}})(beds[i]);
+  var all=document.querySelectorAll("#beds .bed");
+  for(i=0;i<all.length;i++)(function(node){
+    node.addEventListener("dragover",function(e){node.classList.add("drop")});
+    node.addEventListener("dragleave",function(){node.classList.remove("drop")});
+    node.addEventListener("drop",function(){node.classList.remove("drop")});
+  })(all[i])}
+function zenOn(){
+  var app=el("app"),h=HAIKU[seasonOf(S.day)]||[];
+  app.classList.add("zen");S.stats.zen++;Sfx.tap();
+  var z=el("zenHaiku"),g=el("zenHint");
+  if(z)z.textContent=pick(h[rnd(h.length)]||"");
+  if(g)g.textContent=t("zen_out")+" ・ "+t("zen_tip");
+  save()}
+function setLang(L){lang=L;S.lang=L;document.documentElement.lang=L;Audio2.setSeason(seasonOf(S.day));save();buildNav();render();closeSheet()}
+function flashAt(list){flashBeds=list.slice();renderBeds(true);
+  setTimeout(function(){flashBeds=[];if(view==="garden")renderBeds(true)},3200)}
+function bedTap(i){
+  if(selSeed&&S.bedOpen[i]&&!S.plots[i]){
+    if(plantAt(i,selSeed)){if(S.pouch[selSeed]<=0)selSeed=null;renderPouch();return}}
+  Sfx.tap();bedSheet(i)}
+function bind(){
+  el("beds").addEventListener("click",function(e){
+    var el2=e.target.closest?e.target.closest("[data-i],[data-lk],[data-open]"):null,i;
+    if(!el2)return;
+    if(el2.hasAttribute("data-lk")){toast(fmt(t("locked_by"),{n:PLOTREQ[+el2.getAttribute("data-lk")]}));Sfx.no();return}
+    if(el2.hasAttribute("data-open")){openBed(+el2.getAttribute("data-open"));return}
+    i=+el2.getAttribute("data-i");if(!S.bedOpen[i])return;bedTap(i)});
+  el("tools").addEventListener("click",function(e){
+    var b=e.target.closest?e.target.closest("[data-t]"):null;
+    if(!b)return;
+    var k=b.getAttribute("data-t");
+    if(k==="water")waterAll();else if(k==="hg")useHG();else if(k==="zen")zenOn()});
+  el("pouchList").addEventListener("click",function(e){
+    var b=e.target.closest?e.target.closest("[data-seed]"):null;
+    if(!b)return;
+    var id=b.getAttribute("data-seed");
+    selSeed=(selSeed===id)?null:id;Sfx.tap();renderPouch()});
+  document.addEventListener("click",function(e){
+    var b,o,bt,hb,gp,parts,sp2,it,lf,pp;
+    if(!e.target.closest)return;
+    if(e.target.closest("[data-today]")){S.todaySeen=todayIdx();S.awayDays=0;save();render();return}
+    if(e.target.closest("[data-close]")){closeSheet();return}
+    b=e.target.closest("[data-buy]");if(b){buySeed(b.getAttribute("data-buy"));return}
+    o=e.target.closest("[data-orn]");if(o){buyOrn(o.getAttribute("data-orn"));return}
+    it=e.target.closest("[data-item]");if(it){buyItem(it.getAttribute("data-item"));return}
+    if(e.target.closest("[data-can]")){buyCan();return}
+    pp=e.target.closest("[data-plant]");
+    if(pp){if(plantAt(+pp.getAttribute("data-slot"),pp.getAttribute("data-plant")))closeSheet();return}
+    bt=e.target.closest("[data-btab]");if(bt){Sfx.tap();bookTab=bt.getAttribute("data-btab");render();return}
+    lf=e.target.closest("[data-lf]");if(lf){logFilter=lf.getAttribute("data-lf");render();return}
+    hb=e.target.closest("[data-hint]");if(hb){buyHint(hb.getAttribute("data-hint"));return}
+    sp2=e.target.closest("[data-sp]");
+    if(sp2){speciesSheet(sp2.getAttribute("data-sp"));return}
+    var sd=e.target.closest("#pSeed [data-seed]");
+    if(sd){selSeed=sd.getAttribute("data-seed");view="garden";render();return}
+    gp=e.target.closest("[data-gopair]");
+    if(gp){parts=gp.getAttribute("data-gopair").split(":");Sfx.tap();view="garden";closeSheet();flashAt([+parts[0],+parts[1]])}
+    var act=e.target.closest("[data-act]");
+    if(act){var ac=act.getAttribute("data-act"),s=+act.getAttribute("data-slot");
+      if(ac==="water"){waterAt(s);renderSheetBed(s)}
+      else if(ac==="harvest"){closeSheet();harvestAt(s)}
+      else if(ac==="prune"){pruneAt(s);renderSheetBed(s)}
+      else if(ac==="compost"){compostAt(s)}
+      else if(ac==="cloth"){clothAt(s)}
+      else{closeSheet();clearAt(s)}}});
+  el("back").onclick=closeSheet;
+  el("sndBtn").onclick=function(){Audio2.init();Audio2.setOn(!S.sound)};
+  document.addEventListener("click",function(e){var app=el("app");
+    if(!app.classList.contains("zen"))return;
+    if(e.target.closest&&e.target.closest(".tools"))return;
+    app.classList.remove("zen");el("zenHaiku").textContent=""},true);
+  window.addEventListener("resize",function(){Scene.resize()});
+  document.addEventListener("visibilitychange",function(){
+    if(document.hidden){save();return}
+    if(tick()){save()}
+    render();afterTickUI()});
+  window.addEventListener("pagehide",save);
+  document.addEventListener("pointerdown",function(){Audio2.init()},{once:true})}
+function speciesSheet(id){
+  var sp=SP[id];if(!sp)return;
+  var a=[],i,f,cmps=[];
+  for(i=0;i<CMPKEYS.length;i++){f=CMPKEYS[i].split("+");
+    if((f[0]===id||f[1]===id)&&S.disc[f[0]]&&S.disc[f[1]])cmps.push(esc(spName(f[0]===id?f[1]:f[0]))+" "+CMP[CMPKEYS[i]]+"%")}
+  a.push('<div class="detailTop"><span>'+plantSVG({prog:1,seeded:false,blooming:true,dormant:false,dead:false,water:1},sp)+"</span>");
+  a.push('<span><div class="big">'+esc(spName(id))+(isHyb(id)?' <span class="chip">'+t("hybrid_tag")+"</span>":"")+"</div>");
+  a.push('<div class="small">'+pick(SHAPE[sp.sh]||"?")+" ・ "+seasLabel(sp)+" ・ "+esc(pick(sp.note))+"</div></span></div><div class='hr'></div>");
+  a.push('<div class="small">'+t("bloomed_n",{n:S.bloomed[id]||0})+(S.disc[id]?"":" ・ "+t("unknown"))+"</div>");
+  if(cmps.length)a.push('<div class="small" style="margin-top:6px">'+t("cmp_title")+" ："+cmps.join(" / ")+"</div>");
+  if(isHyb(id)&&HYBKEY)for(i=0;i<HYB.length;i++)if(HYB[i][0]===id)
+    a.push('<div class="small" style="margin-top:6px">'+parentLabel(HYB[i][1],hintLevel(id))+" × "+parentLabel(HYB[i][2],hintLevel(id))+"</div>");
+  a.push('<div style="margin-top:10px"><button class="btn" data-close="1">'+t("close")+"</button></div>");
+  openSheet(a.join(""))}
+function afterTickUI(){
+  if(S.awayDays&&S.awayDays>=3&&view==="garden"&&!el("sheet").classList.contains("on")){showAway();buildNav()}}
+/* ---------- 起動 ---------- */
+function loop(){
+  if(!document.hidden){
+    if(tick())save();
+    Scene.sky();
+    renderHeader();renderStats();renderWx();
+    if(view==="garden"){renderBeds();updateBars()}
+    afterTickUI()}}
+function boot(){
+  var first,i,h="",bs;
+  initStore();
+  CMPKEYS=(function(){var a=[],k;for(k in CMP)if(CMP.hasOwnProperty(k)){var f=k.split("+");if(f[0]<f[1])a.push(k)}return a.sort()})();
+  S=loadLocal();first=!S;
+  if(first){S=freshState();
+    var n=(navigator.language||"ja").toLowerCase();
+    S.lang=n.indexOf("zh")===0?"zh":(n.indexOf("en")===0?"en":"ja");
+    log("haiku",{v:0});save()}
+  lang=S.lang||"ja";document.documentElement.lang=lang;
+  Audio2.on=S.sound;Audio2.vol=(S.vol===undefined)?.55:S.vol;
+  applyPrefs();
+  if(!first){var iv=el("intro");if(iv&&iv.parentNode)iv.parentNode.removeChild(iv)}
+  else{
+    el("iSub").textContent=t("sub");el("iStart").textContent=t("start");
+    for(i=0;i<LANGS.length;i++)h+='<b data-l="'+LANGS[i]+'"'+(LANGS[i]===lang?' class="on"':"")+">"+LNAME[i]+"</b>";
+    el("iLang").innerHTML=h;
+    bs=document.querySelectorAll("#iLang [data-l]");
+    for(i=0;i<bs.length;i++)bs[i].onclick=function(){
+      lang=this.getAttribute("data-l");S.lang=lang;save();
+      el("iSub").textContent=t("sub");buildNav();render();
+      var x=document.querySelectorAll("#iLang [data-l]"),j;
+      for(j=0;j<x.length;j++){if(x[j].getAttribute("data-l")===lang)x[j].classList.add("on");else x[j].classList.remove("on")}};
+    el("iStart").onclick=function(){
+      S.intro=false;Audio2.init();save();
+      var e2=el("intro");
+      if(e2){e2.style.transition="opacity .9s";e2.style.opacity=0;
+        setTimeout(function(){if(e2.parentNode)e2.parentNode.removeChild(e2)},920)}}
+    el("iLibs").textContent="PixiJS ・ GSAP ・ Tone.js ・ SortableJS ・ canvas-confetti ・ localForage ・ Google Fonts"}
+  Scene.season=seasonOf(S.day);
+  Scene.weather=S.wx.today;
+  Scene.init();
+  buildNav();bind();uiSoundBtn();render();
+  tick();render();
+  pullIDB(function(){applyPrefs();buildNav();render()});
+  setInterval(loop,1500);
+  setInterval(function(){Scene.sky()},30000)}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
+</script>
+
+</body>
+</html>
